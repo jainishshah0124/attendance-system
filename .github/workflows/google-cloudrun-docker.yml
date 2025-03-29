@@ -39,7 +39,6 @@ env:
   GAR_LOCATION: us-central1
   REGION: 'us-central1' # TODO: update to your region
   SERVICE: my-attendance-system # TODO: update to your service name
-  WORKLOAD_IDENTITY_PROVIDER: 'projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider' # TODO: update to your workload identity provider
 
 jobs:
   deploy:
