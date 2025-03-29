@@ -1,0 +1,196 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" 
+          content="width=device-width, initial-scale=1.0">
+    <title>Student Attendance Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/attendance.css') }}">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <style>
+        label {
+        margin-bottom: 8px;
+        font-weight: bold;
+    }
+    </style>
+</head>
+
+<body>
+    <script>
+        const localStorageData = {{ localStorage_data | tojson | safe }};
+    </script>
+    <div id="loading-screen">
+        <div class="loader"></div>
+    </div>
+    <div class="navbar">
+        <div class="navbar-brand">
+            <h1> 
+                Student Attendance Portal
+            </h1>
+        </div>
+        <div id="clock"></div>
+        <div>
+            <button id="logout" style="background-color: red;" onclick="window.location.href='/logout'">Logout
+            </button>
+        </div>
+        <div class="navbar-links">
+            <p>
+                Academic Year: 
+                <span id="academicYear">2025</span>
+            </p>
+            <!-- Add other relevant information -->
+        </div>
+    </div>
+    <div class="container" id-="content">
+        <div class="video-container">
+            <!-- Video element here -->
+            <video id="videoElement" width="640" height="480" autoplay></video>
+            <div id="responseContainer"></div>
+        </div>
+        <div class="form-container">
+            <div id="formSection">
+                <h2>Mark Attendance</h2>
+                <div><button id="startSocket" style="display: block;">
+                    Start Socket
+                </button>
+                <button id="stopSocket" style="display: none;">
+                    Stop Socket
+                </button></div><br>
+                <button id="addStudentBtn">
+                    Register Student
+                </button>
+                <button id="addLinkButton" 
+                    onclick="showlinkStudentForm()">
+                    Link Student
+                </button>
+                <button id="addClassButton" 
+                    onclick="showAddClassForm()">
+                    Add Class
+                </button>
+
+                <button id="showAttendance" 
+                    onclick="window.location.href='/calendar'">
+                    Show Attendance
+                </button><br>
+                <div style="padding-top: 10px;">
+                <label for="classSelector">Class:</label>
+                <select id="classSelector" required 
+                    onchange="showStudentsList()" style="margin-right: 20px;">
+                    <!-- Populate classes dynamically -->
+                </select>
+                <label for="bufferTime">Allowed Late Time (min):</label>
+                <input type="number" value="0" id="bufferTime" min="0" max="60">
+                <label id="classTime">Class Timings:</label>
+            </div>
+                <ul id="studentsList">
+                    <!-- Populate students dynamically 
+                        based on the selected class -->
+                </ul>
+
+                <div id="summarySection">
+                    <h3>Summary</h3>
+                    <p>
+                        Total Students: 
+                        <span id="totalStudents">0</span>
+                    </p>
+                    <p>
+                        Total Present: 
+                        <span id="totalPresent">0</span>
+                    </p>
+                    <p>
+                        Total Absent: 
+                        <span id="totalAbsent">0</span>
+                    </p>
+                    <p>
+                        Total Late: 
+                        <span id="totalLeave">0</span>
+                    </p>
+                </div>
+
+                <button onclick="handleRestrictedButtonClick(submitAttendance)">
+                    Submit Attendance
+                </button>
+
+                <!-- Result Section -->
+                <div id="resultSection" style="display: none;">
+                    <h3>Attendance Result</h3>
+                    <p>
+                        Date: 
+                        <span id="attendanceDate"></span>
+                    </p>
+                    <p>
+                        Time: 
+                        <span id="attendanceTime"></span>
+                    </p>
+                    <p>
+                        Class: 
+                        <span id="attendanceClass"></span>
+                    </p>
+                    <p>
+                        Total Students: 
+                        <span id="attendanceTotalStudents"></span>
+                    </p>
+                    <p>
+                        Present: 
+                        <span id="attendancePresent"></span>
+                    </p>
+                    <p>
+                        Absent: 
+                        <span id="attendanceAbsent"></span>
+                    </p>
+                    <p>
+                        Late: 
+                        <span id="attendanceLeave"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addStudentPopup" class="popup" style="width: 80vw;height: 80vh;">
+        <button class="popup-close" onclick="closePopup()">Close</button>
+        <iframe src="/register" id="popupregFrame"></iframe>
+    </div>
+
+    <div id="linkStudentPopup" class="popup" style="width: 80vw;height: 80vh;">
+        <button class="popup-close" onclick="closePopup()">Close</button>
+        <iframe src="/fill_class" id="popupFrame"></iframe>
+    </div>
+
+    <div id="addClassPopup" class="popup">
+        <h2>Add Class</h2>
+        <!-- Add Class Form Content -->
+        <label for="newClassName">
+            Class Name:
+        </label>
+        <form action="/add_class" method="post"> 
+            <input type="text" id="newClassName" name="newClassName" required>
+            <input type="time" id="Time" name="Time" required>
+            <!-- Add more fields as needed -->
+    
+            <button type="submit">
+                Submit
+            </button>
+            <button onclick="closePopup()">
+                Cancel
+            </button>
+        </form>
+    </div>
+
+    <div id="myModal" class="modal">
+        <div class="modal-content">
+          <span class="modal-close">&times;</span>
+          <h2>Session Password Required</h2>
+          <p>Please enter the session password:</p>
+          <input type="password" id="passwordInput">
+          <button id="submitButton">Submit</button>
+        </div>
+      </div>
+    
+    <script src="/static/js/web-socket.js"></script>
+    <script src="/static/js/attendance.js"></script>
+</body>
+
+</html>

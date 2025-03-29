@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!----======== CSS ======== -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/regis.css') }}">
+     
+    <!----===== Iconscout CSS ===== -->
+    <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.0/css/line.css">
+    <title>Image Capture Form</title>
+</head>
+<body>
+    <div class="container" style="height: 800px;">
+            <div class="form first">
+                <div class="details personal">
+                    <div id="captureArea">
+                        <header>Image Capture Form</header><br>
+                        <video id="video" width="640" height="480" autoplay></video>
+                        <img id="previewImage" width="640" height="480" style="display: none;">
+                        <br>
+                        
+                        <button id="captureButton">Capture Image</button>
+                        <button id="reTakeBtn" style="display: none;">Retake Image</button>
+                            <form id="imageForm" style="display: none;min-height: 20px;" action="/save_image" method="post">
+                                <input type="hidden" id="imageData" name="imageData">
+                                <input type="hidden" id="employee_id" name="employee_id" value="{{employee_id}}">
+                            <button type="submit">Save Image</button>
+                        </form>
+                    </div>
+            </div>
+        </div>
+        </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const captureButton = document.getElementById('captureButton');
+        const reTakeBtn = document.getElementById('reTakeBtn');
+        const imageForm = document.getElementById('imageForm');
+        const imageDataInput = document.getElementById('imageData');
+        const imageNameInput = document.getElementById('imageName');
+        const imagePreview = document.getElementById('previewImage');
+        const previewImage = document.getElementById('previewImage');
+        
+        const captureArea = document.getElementById('captureArea');
+
+        // Access the user's camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(error => {
+                console.error('Error accessing camera:', error);
+            });
+
+        // Capture image from the camera
+        captureButton.addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+            imageDataInput.value = imageData;
+
+            // Show the image form
+            previewImage.src = imageData;
+            imagePreview.style.display = 'block';
+            video.style.display = 'none';  // Hide the video element
+            imageForm.style.display = 'block';
+            video.style.display = 'none';
+            reTakeBtn.style.display = 'block';
+            captureButton.style.display = 'none';
+        });
+        reTakeBtn.addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+            imageDataInput.value = imageData;
+
+            // Show the image form
+            previewImage.src = imageData;
+            imagePreview.style.display = 'none';
+            video.style.display = 'block';  // Hide the video element
+            imageForm.style.display = 'none';
+            video.style.display = 'block';
+            reTakeBtn.style.display = 'none';
+            captureButton.style.display = 'block';
+        });
+
+    </script>
+</body>
+</html>

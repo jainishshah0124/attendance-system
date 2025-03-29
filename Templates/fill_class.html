@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Select Students</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+    }
+    .container {
+        max-width: 600px;
+        margin: 20px auto;
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    ul {
+        list-style-type: none;
+        padding: 0;
+    }
+    li {
+        margin-bottom: 10px;
+    }
+    label {
+        display: inline-block;
+        cursor: pointer;
+    }
+    input[type="checkbox"] {
+        margin-right: 10px;
+    }
+    button {
+        background-color: #007bff;
+        color: #fff;
+        border: none;
+        padding: 10px 20px;
+        cursor: pointer;
+        border-radius: 5px;
+        transition: background-color 0.3s;
+    }
+    button:hover {
+        background-color: #0056b3;
+    }
+</style>
+</head>
+<body>
+    <script>
+        const localStorageData = {{ localStorage_data | tojson | safe }};
+        localStorage.setItem('localStorageData', JSON.stringify(localStorageData));
+        // Retrieve localStorageData from localStorage
+        const retrievedData = JSON.parse(localStorage.getItem('localStorageData'));
+        //document.getElementById('localStorageData').value = retrievedData;
+        console.log(retrievedData); 
+
+        document.addEventListener("DOMContentLoaded",
+            function () {
+                //data();
+                populateClasses();
+                createCheckboxstart();
+                //showStudentsList();
+            });
+            function populateClasses() {
+                debugger;
+                // Retrieve classes from local storage
+                const savedClasses = localStorageData['classes'] || [];
+                const classSelector = 
+                    document.getElementById('classSelector');
+
+                savedClasses.forEach(className => {
+                    const newClassOption = 
+                        document.createElement('option');
+                    newClassOption.value = className;
+                    newClassOption.text = className;
+                    classSelector.add(newClassOption);
+                });
+            }
+            function createCheckbox(name, value, label,check) {
+                // Create elements
+                var li = document.createElement("li");
+                var input = document.createElement("input");
+                var labelText = document.createTextNode(label);
+                var labelElement = document.createElement("label");
+
+                // Set attributes
+                input.type = "checkbox";
+                input.name = name;
+                input.value = value;
+                input.checked=check;
+                // Append elements
+                labelElement.appendChild(input);
+                labelElement.appendChild(labelText);
+                li.appendChild(labelElement);
+
+                return li;
+            }
+            function createCheckboxstart(){
+                var checkboxList = document.getElementById("studentsList");
+                checkboxList.innerHTML = ""; 
+                var studentsData = JSON.parse(localStorageData.students);
+                const classSelector = document.getElementById('classSelector');
+                const selectedClass = classSelector.options[classSelector.selectedIndex].value;
+
+                const checkedStud = studentsData[selectedClass] || [];
+                var rollNumbersList = checkedStud.map(student => student.rollNumber);
+                document.getElementById('localStorageData').value=rollNumbersList;
+                const savedStudents = localStorageData['toAssignstud'] || [];
+                savedStudents.forEach(classname => {
+                        if(rollNumbersList.includes(classname[2])){
+                            checkboxList.appendChild(createCheckbox("students", classname[2], classname[0]+" " + classname[1],true));
+                        }
+                        else{
+                            checkboxList.appendChild(createCheckbox("students", classname[2], classname[0]+" " + classname[1],false));
+                        }
+                    });
+            }
+    </script>
+<div class="container">
+    <h1>Select Students</h1>
+    <form id="studentForm" onsubmit="parent.handleFormSubmission(event,'popupFrame','studentForm')" action="/submit_fill_class" method="post">
+    <label for="classSelector">Class:</label>
+                <select id="classSelector" required name="classSelector"
+                    onchange="createCheckboxstart()">
+                    <!-- Populate classes dynamically -->
+                </select>
+        <ul id="studentsList">
+            <!-- Populate students dynamically 
+                based on the selected class -->
+        </ul>
+        <input type="hidden" name="localStorageData" id="localStorageData">
+        <button type="submit">Submit</button>
+    </form>
+</div>
+</body>
+</html>

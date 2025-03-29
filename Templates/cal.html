@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendar</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/attendance-calendar.min.css') }}">
+  </head>
+  <body id="main">
+    <div class="navbar">
+        <div class="navbar-brand">
+            <h1> 
+                Student Attendance Portal
+            </h1>
+        </div>
+        <div>
+            
+        </div>
+        <div id="clock"></div>
+        <div>
+            <button id="back" onclick="window.location.href='/attendance'">Back
+            </button>
+            <button id="logout" style="background-color: red;" onclick="window.location.href='/logout'">Logout
+            </button>
+        </div>
+        <div class="navbar-links">
+            <p>
+                Academic Year: 
+                <span id="academicYear">2024</span>
+            </p>
+        </div>
+    </div>
+    <div class="container">
+      <div class="calendar">
+        <div class="class">
+        <label for="classSelector">Class:</label>
+        <select id="classSelector" required 
+                    onchange="callMethod()">
+                    <!-- Populate classes dynamically -->
+        </select></div>
+        <div class="month">
+          <i class="fas fa-angle-left prev"></i>
+          <div class="date">
+            <h1></h1>
+            <p></p>
+          </div>
+          <i class="fas fa-angle-right next"></i>
+        </div>
+        <div class="weekdays">
+          <div>Sun</div>
+          <div>Mon</div>
+          <div>Tue</div>
+          <div>Wed</div>
+          <div>Thu</div>
+          <div>Fri</div>
+          <div>Sat</div>
+        </div>
+        <div class="days"></div>
+      </div><br><br>
+      <div class="info-container">
+        <p class="info"></p>
+        </div>
+    </div>
+    <div id="linkStudentPopup" class="popup" style="width: 80vw;height: 60vh;">
+        <button class="popup-close" onclick="closePopup()">Close</button>
+        <!-- <iframe src="/start_attendance" id="popupFrame"></iframe> -->
+      </div>
+    <script src="/static/js/attendance-calendar.js"></script>
+  </body>
+</html>

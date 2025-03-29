@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<!-- Coding By CodingNepal - codingnepalweb.com -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!----======== CSS ======== -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/regis.css') }}">
+     
+    <!----===== Iconscout CSS ===== -->
+    <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.0/css/line.css">
+
+   <title>Responsive Regisration Form </title>
+</head>
+<body>
+    <div class="container">
+        <header>Registration</header>
+
+        <form action="/imageCapture" method="post">
+            <div class="form first">
+                <div class="details personal">
+                    <span class="title">Personal Details</span>
+                    {{error}}
+                    <div class="fields">
+                        <div class="input-field">
+                            <label>First Name</label>
+                            <input type="text" name="first_name" placeholder="Enter your First name" required>
+                        </div>
+
+                        <div class="input-field">
+                            <label>Last Name</label>
+                            <input type="text" name="last_name" placeholder="Enter your Last name" required>
+                        </div>
+
+                        <div class="input-field">
+                            <label>Roll Number</label>
+                            <input type="number" name="employee_id" placeholder="Enter Employee ID" required>
+                        </div>
+
+                        <div class="input-field">
+                            <label>Date of Birth</label>
+                            <input type="date" name="dob" placeholder="Enter birth date" required>
+                        </div>
+
+                        <div class="input-field">
+                            <label>Mobile Number</label>
+                            <input type="number" name="phone" placeholder="Enter mobile number" required>
+                        </div>
+                        <div class="input-field">
+                            <label>Address</label>
+                            <input type="text" name="address" placeholder="Enter your Address" required>
+                        </div>
+                        <div class="input-field">
+                            <label>Email</label>
+                            <input type="text" name="email" placeholder="Enter your email" required>
+                        </div>
+                        <div class="input-field">
+                            <label>Number of Images</label>
+                            <input type="number" name="number_of_images" placeholder="Enter your Number Of Images" required>
+                        </div>
+                        <div class="input-field">
+                            <label>Gender</label>
+                            <select required name="gender">
+                                <option disabled selected>Select gender</option>
+                                <option>Male</option>
+                                <option>Female</option>
+                                <option>Others</option>
+                            </select>
+                        </div>
+                        
+                        <button class="nextBtn">
+                            <span class="btnText">Next</span>
+                            <i class="uil uil-navigator"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+
+    </form>
+    </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}">
+    </script>
+</body>
+</html>
