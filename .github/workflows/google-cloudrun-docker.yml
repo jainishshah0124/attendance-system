@@ -34,7 +34,7 @@ on:
     branches: [ "main" ]
 
 env:
-  PROJECT_ID: My First Project # TODO: update to your Google Cloud project ID
+  PROJECT_ID: glowing-anagram-454918-b8 # TODO: update to your Google Cloud project ID
   GAR_Name: gh-attendance-system
   GAR_LOCATION: us-central1
   REGION: 'us-central1' # TODO: update to your region
