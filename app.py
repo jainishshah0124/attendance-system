@@ -116,16 +116,45 @@ def add_class():
         return f"Error adding class: {str(e)}", 500
 
 
+def list_class_student():
+    classes = []
+    try:
+        with engine.connect() as conn:
+            query = sqlalchemy.text("SELECT subject_code, start_time FROM class")
+            result = conn.execute(query)
+            print(result)
+            for row in result:
+                classes.append(row[0])
+                classes.append(row[1])
+
+        return classes
+
+    except Exception as e:
+        print(f"Error fetching class data: {e}")
+        return []
+
 
 @app.route('/attendance')
 def attendance():
+    classes=list_classes()
+    listclass=[]
+    listTime=[]
+    i=0
+    for each in classes:
+        if i%2==0:
+            listclass.append(each)
+        else:
+            listTime.append(each)
+        i=i+1
+    print("Student DATA")
+    print(retrive_data(listclass))
     localStorage_data={
          "attendanceData": '[]',
-        "classes": '["CPSC 597"]',
+        "classes": json.dumps(listclass),
         # "colors": '{}',
         # "debug": "honey:core-sdk:*",
-        "students": json.dumps({"CPSC 597":[{"name":"Jainish Shah","rollNumber":"123"},{"name":"Nandish Amin","rollNumber":"9876"}]}),
-        "listTime": '["16:50"]'
+        "students": json.dumps(retrive_data(listclass)),
+        "listTime": json.dumps(listTime)
     }
 
     return render_template('attendance.html',localStorage_data=localStorage_data)
@@ -284,7 +313,7 @@ def calendar():
 
 @app.route('/handle_frameData',methods=['POST'])
 def handle_frameData():
-    print('start')
+    # print('start')
     data = request.json
     image_data = data.get('image_data')
     # Create arrays of known face encodings and their names
@@ -324,7 +353,7 @@ def handle_frameData():
         known_face_encodings.append(encodings[0])
         known_face_names.append(str(student_id))
 
-    print('Face encoding complete')
+    # print('Face encoding complete')
 
     #retrive Data
     # for filename in os.listdir(dataset_path):
@@ -338,7 +367,7 @@ def handle_frameData():
     #     name = os.path.splitext(filename)[0]
     #     known_face_names.append(name)
     
-    print('error')
+    # print('error')
     # Initialize some variables
     face_locations = []
     face_encodings = []
