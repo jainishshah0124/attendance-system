@@ -197,6 +197,82 @@ body,html {
     color: white; 
     border-radius: 50%; 
   }  
+.popup-content {
+    padding: 1rem;
+    color: #fff;
+    height: calc(100% - 3rem);
+    overflow-y: auto;
+}
+.popup-summary {
+    display: flex;
+    gap: 1rem;
+    margin: 1rem 0;
+    flex-wrap: wrap;
+}
+.popup-summary span {
+    background: #1f2a30;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+}
+.export-btn {
+    background: #3498db;
+    border: none;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+.export-btn:hover {
+    background: #2980b9;
+}
+.popup-list {
+    max-height: 70%;
+    overflow-y: auto;
+}
+.popup-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #1f2a30;
+    font-size: 1.4rem;
+}
+.student-name {
+    font-weight: 700;
+    font-size: 1.6rem;
+    color:#1f2a30;
+}
+.student-id {
+    font-size: 1.2rem;
+    color: #1f2a30;
+}
+.status-pill {
+    padding: 0.2rem 0.8rem;
+    border-radius: 999px;
+    font-size: 1.1rem;
+    text-transform: capitalize;
+    min-width: 80px;
+    text-align: center;
+}
+.status-present {
+    background-color: #2ecc71;
+    color: #0b2b18;
+}
+.status-absent {
+    background-color: #e74c3c;
+    color: #fff;
+}
+.status-late {
+    background-color: #f1c40f;
+    color: #4a3c00;
+}
+.popup-empty {
+    color: #aaa;
+    text-align: center;
+    padding: 2rem 0;
+}
 
 .class {
     text-align: center;

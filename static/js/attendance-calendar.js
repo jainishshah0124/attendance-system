@@ -73,13 +73,13 @@ const renderCalendar = () => {
         var data = JSON.parse(localStorage.getItem('attendanceData'));
         for(var i=0;i<data.length;i++){
             if(data[i]['date']==mon){
-                if(data[i]['status']=='Present'){
+                if(data[i]['status']=='present'){
                     present=parseInt(data[i]['count']);
                 }
-                else if(data[i]['status']=='Absent'){
+                else if(data[i]['status']=='absent'){
                     absent=parseInt(data[i]['count']);
                 }
-                else if(data[i]['status']=='Late'){
+                else if(data[i]['status']=='late'){
                     late=parseInt(data[i]['count']);
                 }
             }
@@ -149,36 +149,55 @@ function populateClasses() {
         classSelector.add(newClassOption);
     });
 }
+// async function retrieveAttendanceSummary() {
+//     const subjectCode = document.getElementById('classSelector').value; // Assuming you have an input field for subject code
+//     try {
+//         debugger;
+//         const data = {"data":[{"date":"2025-03-21"},{"date":"2025-03-10"},
+//         {
+//             date: "2025-11-25",
+//             status: "Present",
+//             count: "18"
+//           },
+//           {
+//             date: "2025-11-25",
+//             status: "Absent",
+//             count: "3"
+//           },
+//           {
+//             date: "2025-11-25",
+//             status: "Late",
+//             count: "2"
+//           },
+//           {
+//             date: "2025-11-24",
+//             status: "Present",
+//             count: "20"
+//           },
+//           {
+//             date: "2025-11-24",
+//             status: "Absent",
+//             count: "1"
+//           }]};
+//         console.log(data); // Do something with the response data
+//         console.log('Data sent successfully:', data.data);
+//         localStorage.setItem('attendanceData',JSON.stringify(data.data));
+//         renderCalendar();
+//         return data;
+//     } catch (error) {
+//         console.error('There was a problem with the fetch operation:', error);
+//     }
+// }
+
 async function retrieveAttendanceSummary() {
     const subjectCode = document.getElementById('classSelector').value; // Assuming you have an input field for subject code
     try {
-        debugger;
-        const data = {"data":[{"date":"2025-03-21"},{"date":"2025-03-10"},
-        {
-            date: "2025-03-25",
-            status: "Present",
-            count: "18"
-          },
-          {
-            date: "2025-03-25",
-            status: "Absent",
-            count: "3"
-          },
-          {
-            date: "2025-03-25",
-            status: "Late",
-            count: "2"
-          },
-          {
-            date: "2025-03-24",
-            status: "Present",
-            count: "20"
-          },
-          {
-            date: "2025-03-24",
-            status: "Absent",
-            count: "1"
-          }]};
+        const monthKey = localStorage.getItem('currMonYear');
+        const response = await fetch(`/api/attendance/summary?class=${encodeURIComponent(subjectCode)}&month=${monthKey}`);
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        const data = await response.json();
         console.log(data); // Do something with the response data
         console.log('Data sent successfully:', data.data);
         localStorage.setItem('attendanceData',JSON.stringify(data.data));
@@ -199,17 +218,135 @@ document.addEventListener("DOMContentLoaded",
         callMethod();
     });
 
-function onPopup(day){
-    localStorage.setItem('attendanceClass',document.getElementById("classSelector").value);
+async function onPopup(day){
+    const classCode = document.getElementById("classSelector").value;
+    localStorage.setItem('attendanceClass', classCode);
     if(day<10){
         day='0'+day;
     }
-    localStorage.setItem('clickedBtn',localStorage.getItem("currMonYear")+"-"+day);
-    var popup = document.getElementById('linkStudentPopup');
-    popup.classList.add('fade-in'); // Add class to trigger fade-in animation
+    const dateKey = localStorage.getItem("currMonYear")+"-"+day;
+    localStorage.setItem('clickedBtn', dateKey);
+
+    const popup = document.getElementById('linkStudentPopup');
+    popup.classList.add('fade-in');
     popup.classList.remove('fade-out');
     popup.style.display = 'block';
-    document.getElementById('popupFrame').contentWindow.retriveStudentList();
+
+    setPopupLoading(classCode, dateKey);
+    try {
+        const response = await fetch(`/api/attendance/details?class=${encodeURIComponent(classCode)}&date=${dateKey}`);
+        if (!response.ok) {
+            throw new Error('Failed to load attendance details');
+        }
+        const data = await response.json();
+        populatePopup(data, classCode, dateKey);
+    } catch (error) {
+        console.error(error);
+        showPopupError(error.message);
+    }
+}
+
+function setPopupLoading(classCode, dateKey) {
+    document.getElementById('popupTitle').innerText = `${classCode} - ${dateKey}`;
+    document.getElementById('popupSubtitle').innerText = 'Loading attendance...';
+    document.getElementById('popupTotal').innerText = 'Total: 0';
+    document.getElementById('popupPresent').innerText = 'Present: 0';
+    document.getElementById('popupAbsent').innerText = 'Absent: 0';
+    document.getElementById('popupLate').innerText = 'Late: 0';
+    document.getElementById('popupList').innerHTML = '<p class="popup-empty">Loading...</p>';
+}
+
+function showPopupError(message) {
+    document.getElementById('popupSubtitle').innerText = message;
+    document.getElementById('popupList').innerHTML = '<p class="popup-empty">Unable to load attendance details.</p>';
+}
+
+function populatePopup(data, classCode, dateKey) {
+    const title = document.getElementById('popupTitle');
+    const subtitle = document.getElementById('popupSubtitle');
+    const list = document.getElementById('popupList');
+
+    title.innerText = `${classCode} - ${dateKey}`;
+
+    const records = data.records || [];
+    if (records.length === 0) {
+        subtitle.innerText = 'No attendance recorded for this day.';
+        list.innerHTML = '<p class="popup-empty">No entries found.</p>';
+        updatePopupSummary(0, 0, 0, 0);
+        return;
+    }
+
+    subtitle.innerText = `${records.length} record(s)`;
+    const counts = {present: 0, absent: 0, late: 0};
+    list.innerHTML = records.map((record) => {
+        const statusKey = normalizeStatus(record.status);
+        if (counts.hasOwnProperty(statusKey)) {
+            counts[statusKey] += 1;
+        }
+        const statusLabel = statusDisplay(statusKey);
+        return `<div class="popup-list-item">
+                    <div>
+                        <div class="student-name">${record.student_name}</div>
+                        <div class="student-id">ID: ${record.student_id}</div>
+                    </div>
+                    <span class="status-pill status-${statusKey}">${statusLabel}</span>
+                </div>`;
+    }).join('');
+
+    const total = counts.present + counts.absent + counts.late;
+    updatePopupSummary(total, counts.present, counts.absent, counts.late);
+}
+
+function updatePopupSummary(total, present, absent, late) {
+    document.getElementById('popupTotal').innerText = `Total: ${total}`;
+    document.getElementById('popupPresent').innerText = `Present: ${present}`;
+    document.getElementById('popupAbsent').innerText = `Absent: ${absent}`;
+    document.getElementById('popupLate').innerText = `Late: ${late}`;
+}
+
+function normalizeStatus(status) {
+    if (!status) return 'absent';
+    const value = status.toLowerCase();
+    if (value === 'leave') return 'late';
+    return ['present', 'late', 'absent'].includes(value) ? value : 'absent';
+}
+
+function statusDisplay(statusKey) {
+    switch (statusKey) {
+        case 'present':
+            return 'Present';
+        case 'late':
+            return 'Late';
+        default:
+            return 'Absent';
+    }
+}
+
+function exportPopupToPDF() {
+    const popup = document.querySelector('#linkStudentPopup .popup-content');
+    if (!popup) {
+        return;
+    }
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    const styles = document.querySelector('link[href*="attendance-calendar.min.css"]');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Attendance Summary</title>
+            ${styles ? `<link rel="stylesheet" href="${styles.href}">` : ''}
+            <style>
+                body { font-family: "Quicksand", sans-serif; padding: 20px; background: #fff; color: #000; }
+                .popup-content { color: #000; }
+                .popup-list-item { border-color: #ccc; }
+                .status-present, .status-absent, .status-late { color: #000 !important; }
+            </style>
+        </head>
+        <body>${popup.innerHTML}</body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
 }
 function closePopup() {
     // Close the currently open popup

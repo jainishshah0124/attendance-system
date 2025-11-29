@@ -7,7 +7,7 @@ connector = Connector()
 # Function to return a DB-API connection
 def getconn():
     return connector.connect(
-        "glowing-anagram-454918-b8:us-central1:attendance-db",  # Cloud SQL instance connection name
+        "unique-decker-479723-e8:us-central1:attendance-db",  # Cloud SQL instance connection name
         "pymysql",
         user="root",           # Your DB user
         password="Password@123",  # Your DB password

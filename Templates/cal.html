@@ -71,9 +71,24 @@
         <p class="info"></p>
         </div>
     </div>
-    <div id="linkStudentPopup" class="popup" style="width: 80vw;height: 60vh;">
+    <div id="linkStudentPopup" class="popup" style="width: 35vw;height: 60vh;">
         <button class="popup-close" onclick="closePopup()">Close</button>
-        <!-- <iframe src="/start_attendance" id="popupFrame"></iframe> -->
+        <div class="popup-content">
+          <h2 id="popupTitle">Attendance Details</h2>
+          <p id="popupSubtitle" class="popup-subtitle"></p>
+          <div class="popup-summary">
+            <span id="popupTotal">Total: 0</span>
+            <span id="popupPresent">Present: 0</span>
+            <span id="popupAbsent">Absent: 0</span>
+            <span id="popupLate">Late: 0</span>
+            <button id="popupExport" class="export-btn" onclick="exportPopupToPDF()" title="Export to PDF">
+              ⤓ PDF
+            </button>
+          </div>
+          <div id="popupList" class="popup-list">
+            <p class="popup-empty">Select a highlighted day to view attendance.</p>
+          </div>
+        </div>
       </div>
     <script src="/static/js/attendance-calendar.js"></script>
   </body>

@@ -1,4 +1,4 @@
-from flask import Flask,render_template,request,redirect,url_for
+from flask import Flask,render_template,request,redirect,url_for, jsonify, session
 from connection import engine
 import sqlalchemy
 import os
@@ -9,9 +9,33 @@ import numpy as np
 import json
 from google.cloud import storage
 import io
+from datetime import datetime
 
 
 app = Flask(__name__,template_folder=os.getcwd()+'/Templates')
+
+
+def ensure_attendance_table():
+    ddl = """
+    CREATE TABLE IF NOT EXISTS attendance (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id VARCHAR(64) NOT NULL,
+        student_name VARCHAR(255) NOT NULL,
+        class_code VARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        record_date DATE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_attendance_entry (student_id, class_code, record_date)
+    )
+    """
+    with engine.connect() as conn:
+        conn.execute(sqlalchemy.text(ddl))
+        conn.commit()
+
+
+ensure_attendance_table()
+
 
 @app.route('/checkConn')
 def checkConn():
@@ -67,9 +91,23 @@ def save_image():
     # Decode base64 image (remove data URL prefix)
     _, encoded_data = image_data.split(',', 1)
     decoded_data = base64.b64decode(encoded_data)
+    nparr = np.frombuffer(decoded_data, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return "Invalid image data", 400
+
+    # Normalize to RGB uint8 using shared helper
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    normalized_frame = ensure_rgb_uint8(rgb_frame)
+    bgr_frame = cv2.cvtColor(normalized_frame, cv2.COLOR_RGB2BGR)
+
+    success, buffer = cv2.imencode(".jpg", bgr_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    if not success:
+        return "Failed to encode image", 500
+    jpeg_bytes = buffer.tobytes()
 
     # Upload directly to GCS
-    bucket_name = 'attendance-storage'
+    bucket_name = 'attendance--storage'
     destination_blob_name = f'{employee_id}.jpg'
 
     storage_client = storage.Client()
@@ -80,8 +118,8 @@ def save_image():
     if blob.exists():
         blob.delete()
 
-    # Upload the image from memory
-    blob.upload_from_string(decoded_data, content_type='image/jpeg')
+    # Upload the normalized JPEG from memory
+    blob.upload_from_string(jpeg_bytes, content_type='image/jpeg')
 
     # Save GCS path in DB (or use blob.public_url if public)
     photo_path = f'gs://{bucket_name}/{destination_blob_name}'
@@ -94,6 +132,58 @@ def save_image():
         conn.commit()
 
     return redirect('/attendance')
+
+@app.route('/submitAttendance', methods=['POST'])
+def submit_attendance():
+    payload = request.get_json(silent=True) or {}
+    attendance_records = payload.get('attendanceData') or []
+    if not attendance_records:
+        return jsonify({"message": "No attendance data provided"}), 400
+
+    today_date = payload.get('todayDate')
+
+    normalized_rows = []
+    for record in attendance_records:
+        try:
+            student_id = record.get('rollNumber') or record.get('student_id')
+            student_name = record.get('name')
+            class_code = record.get('class') or payload.get('attendanceClass')
+            status = record.get('status')
+            record_date = record.get('date') or today_date
+        except AttributeError:
+            continue
+
+        if not (student_id and student_name and class_code and status and record_date):
+            continue
+
+        try:
+            parsed_date = datetime.strptime(record_date, "%Y-%m-%d").date()
+        except ValueError:
+            parsed_date = datetime.utcnow().date()
+
+        normalized_rows.append({
+            "student_id": str(student_id),
+            "student_name": student_name,
+            "class_code": class_code,
+            "status": status,
+            "record_date": parsed_date
+        })
+
+    if not normalized_rows:
+        return jsonify({"message": "No valid attendance entries found"}), 400
+
+    insert_stmt = sqlalchemy.text("""
+        INSERT INTO attendance (student_id, student_name, class_code, status, record_date)
+        VALUES (:student_id, :student_name, :class_code, :status, :record_date)
+        ON DUPLICATE KEY UPDATE
+            status = VALUES(status),
+            updated_at = CURRENT_TIMESTAMP
+    """)
+
+    with engine.begin() as conn:
+        conn.execute(insert_stmt, normalized_rows)
+
+    return jsonify({"message": "Attendance stored", "rows": len(normalized_rows)}), 200
 
 @app.route('/add_class',methods=['POST'])
 def add_class():
@@ -311,6 +401,18 @@ def calendar():
     #         return render_template('login.html', error_message=error_message)
     return render_template('cal.html')
 
+def ensure_rgb_uint8(image: np.ndarray) -> np.ndarray:
+    """Convert images to contiguous 8-bit RGB arrays for face_recognition."""
+    print('Convert images to contiguous 8-bit RGB arrays for face_recognition.')
+    image = np.clip(image, 0, 255).astype(np.uint8, copy=False)
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    elif image.ndim == 3 and image.shape[2] == 4:
+        image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+    elif image.ndim == 3 and image.shape[2] > 3:
+        image = image[:, :, :3]
+    return np.require(image, dtype=np.uint8, requirements=['C_CONTIGUOUS', 'ALIGNED'])
+
 @app.route('/handle_frameData',methods=['POST'])
 def handle_frameData():
     # print('start')
@@ -321,9 +423,10 @@ def handle_frameData():
     known_face_names = []
 
     dataset_path = 'Dataset/'
-    bucket_name = 'attendance-storage'
+    bucket_name = 'attendance--storage'
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
+
     with engine.connect() as conn:
         result = conn.execute(sqlalchemy.text("SELECT StudentID, photo_path FROM Student WHERE photo_path IS NOT NULL"))
         students = result.fetchall()
@@ -343,9 +446,24 @@ def handle_frameData():
 
         # Read blob data into memory
         img_bytes = blob.download_as_bytes()
-        img = face_recognition.load_image_file(io.BytesIO(img_bytes))
-
-        encodings = face_recognition.face_encodings(img)
+        img = np.asarray(bytearray(img_bytes), dtype=np.uint8)
+        img = cv2.imdecode(img, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            print(f"Failed to decode image for {student_id}")
+            continue
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        elif img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        else:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = ensure_rgb_uint8(img)
+        print(f"Loaded {filename} for {student_id}: type={type(img)}, shape={img.shape}, dtype={img.dtype}, flags={img.flags}")
+        try:
+            encodings = face_recognition.face_encodings(img)
+        except RuntimeError as err:
+            print(f"Skipping {student_id}: unable to encode face ({err})")
+            continue
         if len(encodings) == 0:
             print(f"No face found in image for {student_id}")
             continue
@@ -353,7 +471,7 @@ def handle_frameData():
         known_face_encodings.append(encodings[0])
         known_face_names.append(str(student_id))
 
-    # print('Face encoding complete')
+    #print('Face encoding complete')
 
     #retrive Data
     # for filename in os.listdir(dataset_path):
@@ -384,16 +502,23 @@ def handle_frameData():
 
     # Decode the NumPy array into an image
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return "Invalid frame data", 400
 
     # Resize frame of video to 1/4 size for faster face recognition processing
     small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
 
     # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-    rgb_small_frame = np.ascontiguousarray(small_frame[:, :, ::-1])
+    rgb_small_frame = ensure_rgb_uint8(np.ascontiguousarray(small_frame[:, :, ::-1]))
 
     # Only process every other frame of video to save time
-    face_locations = face_recognition.face_locations(rgb_small_frame)
-    face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+    print(f"Processing frame: shape={rgb_small_frame.shape}, dtype={rgb_small_frame.dtype}, contiguous={rgb_small_frame.flags['C_CONTIGUOUS']}")
+    try:
+        face_locations = face_recognition.face_locations(rgb_small_frame)
+        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+    except RuntimeError as err:
+        print(f"Failed to process frame: {err}")
+        return "Unable to process frame", 400
 
     face_names = []
     name = "Unknown"
@@ -409,6 +534,70 @@ def handle_frameData():
         # print(name)
         face_names.append(name)
     return name
+
+@app.route('/api/attendance/summary', methods=['GET'])
+def attendance_summary():
+    class_code = request.args.get('class')
+    month = request.args.get('month')  # format YYYY-MM
+
+    base_query = """
+        SELECT record_date as date, status, COUNT(*) as count
+        FROM attendance
+        WHERE 1=1
+    """
+    params = {}
+    if class_code:
+        base_query += " AND class_code = :class"
+        params["class"] = class_code
+    if month:
+        base_query += " AND DATE_FORMAT(record_date, '%Y-%m') = :month"
+        params["month"] = month
+
+    base_query += " GROUP BY record_date, status ORDER BY record_date DESC"
+
+    with engine.connect() as conn:
+        result = conn.execute(sqlalchemy.text(base_query), params)
+        rows = [
+            {
+                "date": row.date.strftime("%Y-%m-%d"),
+                "status": row.status,
+                "count": int(row.count)
+            }
+            for row in result
+        ]
+
+    return jsonify({"data": rows})
+
+@app.route('/api/attendance/details', methods=['GET'])
+def attendance_details():
+    class_code = request.args.get('class')
+    record_date = request.args.get('date')
+
+    if not class_code or not record_date:
+        return jsonify({"message": "class and date are required"}), 400
+
+    query = """
+        SELECT student_id, student_name, status
+        FROM attendance
+        WHERE class_code = :class AND record_date = :record_date
+        ORDER BY student_name
+    """
+    with engine.connect() as conn:
+        result = conn.execute(sqlalchemy.text(query), {"class": class_code, "record_date": record_date})
+        records = [
+            {
+                "student_id": row.student_id,
+                "student_name": row.student_name,
+                "status": row.status
+            }
+            for row in result
+        ]
+
+    return jsonify({
+        "class_code": class_code,
+        "date": record_date,
+        "records": records
+    })
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", debug=True, port=int(os.environ.get('PORT',8080)))

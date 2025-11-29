@@ -88,7 +88,7 @@ function addStudent() {
             () => markAttendance('present', listItem, selectedClass));
     const leaveButton =
         createButton('L', 'leave',
-            () => markAttendance('leave', listItem, selectedClass));
+            () => markAttendance('late', listItem, selectedClass));
 
     listItem.appendChild(absentButton);
     listItem.appendChild(presentButton);
@@ -338,7 +338,7 @@ function showStudentsList() {
         const presentButton = createButton('P', 'present',
             () => markAttendance('present', listItem, selectedClass));
         const leaveButton = createButton('L', 'leave',
-            () => markAttendance('leave', listItem, selectedClass));
+            () => markAttendance('late', listItem, selectedClass));
         // absentButton.disabled=true;
         // presentButton.disabled=true;
         // leaveButton.disabled=true;
