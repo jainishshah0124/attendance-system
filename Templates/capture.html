@@ -12,26 +12,30 @@
     <title>Image Capture Form</title>
 </head>
 <body>
-    <div class="container" style="height: 800px;">
-            <div class="form first">
-                <div class="details personal">
-                    <div id="captureArea">
-                        <header>Image Capture Form</header><br>
-                        <video id="video" width="640" height="480" autoplay></video>
-                        <img id="previewImage" width="640" height="480" style="display: none;">
-                        <br>
-                        
-                        <button id="captureButton">Capture Image</button>
-                        <button id="reTakeBtn" style="display: none;">Retake Image</button>
-                            <form id="imageForm" style="display: none;min-height: 20px;" action="/save_image" method="post">
-                                <input type="hidden" id="imageData" name="imageData">
-                                <input type="hidden" id="employee_id" name="employee_id" value="{{employee_id}}">
-                            <button type="submit">Save Image</button>
-                        </form>
-                    </div>
+    <div class="background-blur"></div>
+    <div class="register-shell capture-shell">
+        <div class="register-card">
+            <div class="hero">
+                <h1>Capture Portrait</h1>
+                <p>Keep your face centered, remove accessories, and ensure good lighting. Capture one clear photo to continue.</p>
+            </div>
+            <div class="capture-grid">
+                <div class="capture-panel">
+                    <video id="video" autoplay muted playsinline></video>
+                    <img id="previewImage" style="display:none;">
+                </div>
+                <div class="control-panel">
+                    <button id="captureButton" class="pulse-btn">Capture Image</button>
+                    <button id="reTakeBtn" class="secondary-btn" style="display:none;">Retake</button>
+                    <form id="imageForm" class="save-panel" style="display:none;" action="/save_image" method="post">
+                        <input type="hidden" id="imageData" name="imageData">
+                        <input type="hidden" id="employee_id" name="employee_id" value="{{employee_id}}">
+                        <button type="submit" class="pulse-btn">Save & Continue</button>
+                    </form>
+                </div>
             </div>
         </div>
-        </div>
+    </div>
 
     <script>
         const video = document.getElementById('video');

@@ -124,6 +124,8 @@
     <div class="navbar">
         <h1>Super Admin Dashboard</h1>
         <div class="actions">
+            <button onclick="window.location.href='/register'">Register Student</button>
+            <button onclick="window.location.href='/pending_students'">Pending Approvals</button>
             <button onclick="window.location.href='{{ url_for('attendance') }}'">Go to Attendance</button>
             <button onclick="window.location.href='{{ url_for('logout') }}'" style="background:#e74c3c">Logout</button>
         </div>

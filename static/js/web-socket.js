@@ -54,6 +54,7 @@
                     }
                 });
                 document.getElementById('classSelector').disabled=false;
+                showSummary(document.getElementById('classSelector').value);
             }
         }
 

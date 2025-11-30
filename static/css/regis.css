@@ -1,171 +1,181 @@
-/* ===== Google Font Import - Poppins ===== */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600&display=swap');
-*{
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap');
+
+:root {
+    --bg: #0f172a;
+    --card: rgba(15, 23, 42, 0.85);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --input: rgba(255, 255, 255, 0.06);
+    --accent: #5eead4;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+}
+
+* {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Poppins', sans-serif;
+    font-family: 'Outfit', sans-serif;
 }
-body{
+
+body {
     min-height: 100vh;
+    background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 60%, #020617 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #4070f4;
-}
-.container{
-    position: relative;
-    max-width: 900px;
-    width: 100%;
-    border-radius: 6px;
-    padding: 30px;
-    margin: 0 15px;
-    background-color: #fff;
-    box-shadow: 0 5px 10px rgba(0,0,0,0.1);
-    height: 496px;
-}
-.container header{
-    position: relative;
-    font-size: 20px;
-    font-weight: 600;
-    color: #333;
-}
-.container header::before{
-    content: "";
-    position: absolute;
-    left: 0;
-    bottom: -2px;
-    height: 3px;
-    width: 27px;
-    border-radius: 8px;
-    background-color: #4070f4;
-}
-.container form{
-    position: relative;
-    margin-top: 16px;
-    min-height: 390px;
-    background-color: #fff;
+    color: var(--text);
     overflow: hidden;
 }
-.container form .form{
-    position: absolute;
-    background-color: #fff;
-    transition: 0.3s ease;
-}
-.container form .form.second{
-    opacity: 0;
+
+.background-blur {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 20% 20%, rgba(94, 234, 212, 0.25), transparent 35%),
+                radial-gradient(circle at 80% 0%, rgba(59, 130, 246, 0.25), transparent 30%);
+    filter: blur(80px);
     pointer-events: none;
-    transform: translateX(100%);
+    z-index: -1;
 }
-form.secActive .form.second{
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
+
+.register-shell {
+    width: min(960px, 95vw);
+    background: var(--card);
+    border-radius: 32px;
+    border: 1px solid var(--card-border);
+    box-shadow: 0 45px 80px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
 }
-form.secActive .form.first{
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(-100%);
+
+.register-card {
+    padding: 48px;
 }
-.container form .title{
-    display: block;
-    margin-bottom: 8px;
-    font-size: 16px;
-    font-weight: 500;
-    margin: 6px 0;
-    color: #333;
+
+.hero {
+    margin-bottom: 32px;
 }
-.container form .fields{
-    display: flex;
+
+.hero h1 {
+    font-size: 40px;
+    margin-bottom: 10px;
+}
+
+.hero p {
+    color: var(--muted);
+}
+
+.capture-shell video,
+.capture-shell img {
+    width: 100%;
+    border-radius: 24px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.capture-grid {
+    display: grid;
+    grid-template-columns: minmax(300px, 1.2fr) minmax(200px, 0.8fr);
+    gap: 24px;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
 }
-form .fields .input-field{
+
+.capture-panel {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 28px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.control-panel {
     display: flex;
-    width: calc(100% / 3 - 15px);
     flex-direction: column;
-    margin: 4px 0;
+    gap: 16px;
 }
-.input-field label{
-    font-size: 12px;
+
+.secondary-btn {
+    border: none;
+    padding: 12px 0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
     font-weight: 500;
-    color: #2e2e2e;
-}
-.input-field input, select{
-    outline: none;
-    font-size: 14px;
-    font-weight: 400;
-    color: #333;
-    border-radius: 5px;
-    border: 1px solid #aaa;
-    padding: 0 15px;
-    height: 42px;
-    margin: 8px 0;
-}
-.input-field input :focus,
-.input-field select:focus{
-    box-shadow: 0 3px 6px rgba(0,0,0,0.13);
-}
-.input-field select,
-.input-field input[type="date"]{
-    color: #707070;
-}
-.input-field input[type="date"]:valid{
-    color: #333;
-}
-.container form button, .backBtn{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 45px;
-    max-width: 200px;
-    width: 100%;
-    border: none;
-    outline: none;
-    color: #fff;
-    border-radius: 5px;
-    margin: 25px 0;
-    background-color: #4070f4;
-    transition: all 0.3s linear;
     cursor: pointer;
 }
-.container button, .backBtn{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 45px;
-    max-width: 200px;
+
+.save-panel {
     width: 100%;
-    border: none;
-    outline: none;
-    color: #fff;
-    border-radius: 5px;
-    margin: 25px 0;
-    background-color: #4070f4;
-    transition: all 0.3s linear;
-    cursor: pointer;
 }
-.container form .btnText{
-    font-size: 14px;
-    font-weight: 400;
-}
-form button:hover{
-    background-color: #265df2;
-}
-form button i,
-form .backBtn i{
-    margin: 0 6px;
-}
-form .backBtn i{
-    transform: rotate(180deg);
-}
-form .buttons{
+
+.register-form {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 18px;
 }
-form .buttons button , .backBtn{
-    margin-right: 14px;
+
+.grid-two {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.input-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.input-field span {
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.input-field input,
+.input-field select {
+    border: none;
+    border-radius: 16px;
+    padding: 14px 16px;
+    background: var(--input);
+    color: var(--text);
+    outline: 1px solid transparent;
+    transition: outline 0.2s ease, transform 0.2s ease;
+}
+
+.input-field input:focus,
+.input-field select:focus {
+    outline: 2px solid var(--accent);
+    transform: translateY(-1px);
+}
+
+.pulse-btn {
+    margin-top: 10px;
+    border: none;
+    padding: 14px 0;
+    border-radius: 18px;
+    background: linear-gradient(120deg, #5eead4, #38bdf8);
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+}
+
+.pulse-btn::after {
+    content: "";
+    position: absolute;
+    inset: -50% 30%;
+    background: rgba(255, 255, 255, 0.25);
+    filter: blur(30px);
+    animation: pulse 2.5s infinite linear;
+}
+
+.pulse-btn:hover {
+    transform: translateY(-2px);
+}
+
+@keyframes pulse {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
 }
 
 @media (max-width: 750px) {

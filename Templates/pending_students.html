@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pending Students</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 60%, #020617 100%);
+            color: #f8fafc;
+            margin: 0;
+            min-height: 100vh;
+            padding: 32px;
+        }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+.cards {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.card {
+    background: rgba(15, 23, 42, 0.85);
+    border-radius: 24px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 18px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.45);
+    display: flex;
+    gap: 18px;
+    align-items: center;
+}
+.card img {
+    width: 160px;
+    height: 120px;
+    border-radius: 16px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.details { flex: 1; }
+.muted { color: #94a3b8; font-size: 0.9rem; }
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .actions form {
+            flex: 1;
+        }
+        .actions button {
+            flex: 1;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 0;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .primary {
+            background: linear-gradient(120deg, #5eead4, #38bdf8);
+            color: #0f172a;
+        }
+        .danger {
+            background: rgba(239, 68, 68, 0.85);
+            color: #fff;
+        }
+        .reason-input {
+            display: none;
+            margin-top: 10px;
+        }
+        .reason-input textarea {
+            width: 100%;
+            border-radius: 12px;
+            border: none;
+            padding: 10px;
+            resize: vertical;
+            background: rgba(255,255,255,0.05);
+            color: #f8fafc;
+        }
+        a.link {
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h1>Pending Approvals</h1>
+        <a class="link" href="{{ url_for('attendance') }}">← Back to attendance</a>
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div style="margin-bottom:16px;padding:12px 16px;border-radius:14px;background:rgba(255,255,255,0.08);color:#f8fafc;">
+                {{ message }}
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% if not students %}
+    <p class="muted">No students awaiting approval.</p>
+    {% else %}
+    <div class="cards">
+        {% for student in students %}
+        <div class="card">
+            {% if student.photo_url %}
+            <img src="{{ student.photo_url }}" alt="Pending student photo">
+            {% else %}
+            <div style="height:200px;border-radius:20px;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;">No photo yet</div>
+            {% endif %}
+            <div class="details">
+                <h3>{{ student.name }}</h3>
+                <p class="muted">{{ student.email or 'No email provided' }}</p>
+                <p class="muted">{{ student.phone or 'No phone' }}</p>
+                <p class="muted">{{ student.address or 'No address' }}</p>
+            </div>
+            <div class="actions">
+                <form method="POST" action="{{ url_for('approve_student', student_id=student.id) }}">
+                    <button type="submit" class="primary">Approve</button>
+                </form>
+                <form method="POST" action="{{ url_for('reject_student', student_id=student.id) }}" class="reject-form">
+                    <div class="reason-input">
+                        <textarea name="reason" rows="2" placeholder="Provide reason for rejection (optional)"></textarea>
+                    </div>
+                    <button type="button" class="danger reject-btn">Reject</button>
+                    <button type="submit" class="danger confirm-btn" style="display:none;">Confirm Reject</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <script>
+        document.querySelectorAll('.reject-form').forEach(form => {
+            const rejectBtn = form.querySelector('.reject-btn');
+            const confirmBtn = form.querySelector('.confirm-btn');
+            const reasonBox = form.querySelector('.reason-input');
+            rejectBtn.addEventListener('click', () => {
+                reasonBox.style.display = 'block';
+                rejectBtn.style.display = 'none';
+                confirmBtn.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html>

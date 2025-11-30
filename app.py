@@ -9,7 +9,7 @@ import numpy as np
 import json
 from google.cloud import storage
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from sib_api_v3_sdk import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
@@ -30,6 +30,57 @@ if BREVO_API_KEY:
     brevo_config = Configuration()
     brevo_config.api_key['api-key'] = BREVO_API_KEY
     brevo_api = TransactionalEmailsApi(ApiClient(brevo_config))
+
+def ensure_student_status_column():
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(sqlalchemy.text("SHOW COLUMNS FROM Student LIKE 'status'"))
+            if result.fetchone() is None:
+                conn.execute(sqlalchemy.text("ALTER TABLE Student ADD COLUMN status ENUM('pending','approved') NOT NULL DEFAULT 'pending'"))
+                conn.commit()
+    except Exception as exc:
+        print(f"Unable to verify Student.status column: {exc}")
+
+ensure_student_status_column()
+
+def build_signed_url(photo_path):
+    if not photo_path:
+        return None
+    if photo_path.startswith('http'):
+        return photo_path
+    if photo_path.startswith('gs://'):
+        try:
+            _, path = photo_path.split('gs://', 1)
+            bucket_name, blob_name = path.split('/', 1)
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            return blob.generate_signed_url(expiration=timedelta(minutes=30))
+        except Exception as exc:
+            print(f"Unable to sign URL for {photo_path}: {exc}")
+            return None
+    return photo_path
+
+def send_student_status_email(email, name, approved, reason=None):
+    if not brevo_api or not email:
+        return
+    status_text = "approved" if approved else "rejected"
+    subject = f"Registration {status_text.title()}"
+    body = (
+        f"<p>Hi {name or 'Student'},</p>"
+        f"<p>Your registration has been <strong>{status_text}</strong>.</p>"
+        f"<p>{'You can now log in and link to classes.' if approved else (reason or 'Feel free to resubmit after correcting the details.')}</p>"
+        "<p>– Attendance System</p>"
+    )
+    try:
+        brevo_api.send_transac_email(SendSmtpEmail(
+            to=[{"email": email, "name": name}],
+            sender={"email": BREVO_FROM_EMAIL, "name": BREVO_FROM_NAME},
+            subject=subject,
+            html_content=body
+        ))
+    except Exception as exc:
+        print(f"Failed to send status email to {email}: {exc}")
 
 def login_required(view_func):
     @wraps(view_func)
@@ -96,7 +147,7 @@ def get_admin_reference_data():
     with engine.connect() as conn:
         classes = conn.execute(sqlalchemy.text("SELECT subject_code FROM class ORDER BY subject_code")).fetchall()
         teachers = conn.execute(sqlalchemy.text("SELECT id, username FROM users WHERE role='teacher' ORDER BY username")).fetchall()
-        students = conn.execute(sqlalchemy.text("SELECT StudentID, fname, Lname FROM Student ORDER BY fname")).fetchall()
+        students = conn.execute(sqlalchemy.text("SELECT StudentID, fname, Lname FROM Student WHERE status='approved' ORDER BY fname")).fetchall()
         assignments = conn.execute(sqlalchemy.text("""
             SELECT tc.id, u.username, tc.subject_code
             FROM teacher_class tc
@@ -129,6 +180,7 @@ def get_teacher_dashboard_data(teacher_id):
         all_students = conn.execute(sqlalchemy.text("""
             SELECT StudentID, fname, Lname
             FROM Student
+            WHERE status='approved'
             ORDER BY fname
         """)).fetchall()
 
@@ -137,7 +189,7 @@ def get_teacher_dashboard_data(teacher_id):
                 SELECT s.StudentID, s.fname, s.Lname
                 FROM enrollment e
                 JOIN Student s ON s.StudentID = e.studentID
-                WHERE e.subject_code = :code
+                WHERE e.subject_code = :code AND s.status='approved'
                 ORDER BY s.fname
             """), {"code": row.subject_code}).fetchall()
             student_list = [
@@ -154,6 +206,25 @@ def get_teacher_dashboard_data(teacher_id):
 
     data["students"] = all_students
     return data
+
+
+def get_attendance_classes(user_id, role):
+    query = "SELECT subject_code, start_time FROM class ORDER BY subject_code"
+    params = {}
+    if role == 'teacher':
+        query = """
+            SELECT c.subject_code, c.start_time
+            FROM teacher_class tc
+            JOIN class c ON c.subject_code = tc.subject_code
+            WHERE tc.teacher_id = :teacher_id
+            ORDER BY c.subject_code
+        """
+        params["teacher_id"] = user_id
+
+    with engine.connect() as conn:
+        rows = conn.execute(sqlalchemy.text(query), params).fetchall()
+
+    return [(row[0], row[1]) for row in rows]
 
 
 def fetch_student_contacts(student_ids):
@@ -368,6 +439,14 @@ def admin_assign_student():
         return redirect(url_for('admin_dashboard'))
 
     try:
+        with engine.connect() as conn:
+            status_row = conn.execute(
+                sqlalchemy.text("SELECT status FROM Student WHERE StudentID=:sid"),
+                {"sid": int(student_id)}
+            ).scalar()
+            if status_row != 'approved':
+                flash("Student must be approved before assigning.", "error")
+                return redirect(url_for('admin_dashboard'))
         with engine.begin() as conn:
             exists = conn.execute(
                 sqlalchemy.text("SELECT 1 FROM enrollment WHERE studentID=:sid AND subject_code=:code"),
@@ -549,6 +628,14 @@ def teacher_assign_student():
         return redirect(url_for('teacher_dashboard'))
 
     try:
+        with engine.connect() as conn:
+            status_row = conn.execute(
+                sqlalchemy.text("SELECT status FROM Student WHERE StudentID=:sid"),
+                {"sid": int(student_id)}
+            ).scalar()
+            if status_row != 'approved':
+                flash("Student must be approved before linking.", "error")
+                return redirect(url_for('teacher_dashboard'))
         with engine.begin() as conn:
             if role != 'superadmin':
                 allowed = conn.execute(
@@ -577,13 +664,102 @@ def teacher_assign_student():
     except Exception as exc:
         flash(f"Failed to link student: {exc}", "error")
     return redirect(url_for('teacher_dashboard'))
-@app.route('/register')
+
+@app.route('/api/verify-password', methods=['POST'])
 @login_required
+def verify_password():
+    data = request.get_json(silent=True) or {}
+    supplied = data.get('password')
+    if not supplied:
+        return jsonify({"valid": False, "message": "Password required"}), 400
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            sqlalchemy.text("SELECT password_hash FROM users WHERE id=:uid"),
+            {"uid": session['user_id']}
+        ).fetchone()
+    if not row:
+        return jsonify({"valid": False, "message": "User not found"}), 404
+
+    if check_password_hash(row.password_hash, supplied):
+        return jsonify({"valid": True})
+    return jsonify({"valid": False, "message": "Incorrect password"}), 401
+
+def can_review_students():
+    return session.get('role') in ('teacher', 'superadmin')
+
+@app.route('/pending_students')
+@login_required
+def pending_students():
+    if not can_review_students():
+        return abort(403)
+    with engine.connect() as conn:
+        rows = conn.execute(sqlalchemy.text("""
+            SELECT StudentID, fname, Lname, gender, phone, email, address, photo_path, status
+            FROM Student WHERE status='pending' ORDER BY fname
+        """)).fetchall()
+
+    students = []
+    for row in rows:
+        students.append({
+            "id": row.StudentID,
+            "name": f"{row.fname} {row.Lname}",
+            "gender": row.gender,
+            "phone": row.phone,
+            "email": row.email,
+            "address": row.address,
+            "photo_url": build_signed_url(row.photo_path)
+        })
+
+    return render_template('pending_students.html', students=students)
+
+@app.route('/pending_students/<int:student_id>/approve', methods=['POST'])
+@login_required
+def approve_student(student_id):
+    if not can_review_students():
+        return abort(403)
+    reason = request.form.get('reason', '').strip()
+    with engine.begin() as conn:
+        student = conn.execute(
+            sqlalchemy.text("SELECT fname, Lname, email FROM Student WHERE StudentID=:sid"),
+            {"sid": student_id}
+        ).fetchone()
+        if not student:
+            flash("Student not found.", "error")
+            return redirect(url_for('pending_students'))
+        conn.execute(
+            sqlalchemy.text("UPDATE Student SET status='approved' WHERE StudentID=:sid"),
+            {"sid": student_id}
+        )
+    send_student_status_email(student.email, f"{student.fname} {student.Lname}", True)
+    flash("Student approved.", "success")
+    return redirect(url_for('pending_students'))
+
+@app.route('/pending_students/<int:student_id>/reject', methods=['POST'])
+@login_required
+def reject_student(student_id):
+    if not can_review_students():
+        return abort(403)
+    with engine.begin() as conn:
+        student = conn.execute(
+            sqlalchemy.text("SELECT fname, Lname, email FROM Student WHERE StudentID=:sid"),
+            {"sid": student_id}
+        ).fetchone()
+        if not student:
+            flash("Student not found.", "error")
+            return redirect(url_for('pending_students'))
+        conn.execute(
+            sqlalchemy.text("DELETE FROM Student WHERE StudentID=:sid"),
+            {"sid": student_id}
+        )
+    send_student_status_email(student.email, f"{student.fname} {student.Lname}", False)
+    flash("Student rejected and removed.", "info")
+    return redirect(url_for('pending_students'))
+@app.route('/register')
 def register():
     return render_template('registration.html')
 
 @app.route('/imageCapture',methods=['POST'])
-@login_required
 def imageCapture():
     try:
         data = {
@@ -601,8 +777,8 @@ def imageCapture():
         print(data)
 
         insert_query = sqlalchemy.text("""
-            INSERT INTO Student (StudentID, fname, Lname, DOB, gender, phone, address, email, photo_path)
-            VALUES (:StudentID, :fname, :Lname, :DOB, :gender, :phone, :address, :email, :photo_path)
+            INSERT INTO Student (StudentID, fname, Lname, DOB, gender, phone, address, email, photo_path, status)
+            VALUES (:StudentID, :fname, :Lname, :DOB, :gender, :phone, :address, :email, :photo_path, 'pending')
         """)
 
         with engine.connect() as conn:
@@ -616,7 +792,6 @@ def imageCapture():
         return render_template('registration.html',error=str(e))
     
 @app.route('/save_image',methods=['POST','GET'])
-@login_required
 def save_image():
     image_data = request.form['imageData']
     employee_id = request.form['employee_id']
@@ -764,28 +939,23 @@ def list_class_student():
 @app.route('/attendance')
 @login_required
 def attendance():
-    classes=list_classes()
-    listclass=[]
-    listTime=[]
-    i=0
-    for each in classes:
-        if i%2==0:
-            listclass.append(each)
-        else:
-            listTime.append(each)
-        i=i+1
-    print("Student DATA")
-    print(retrive_data(listclass))
-    localStorage_data={
-         "attendanceData": '[]',
+    role = session.get('role')
+    user_id = session.get('user_id')
+    class_rows = get_attendance_classes(user_id, role)
+
+    listclass = [row[0] for row in class_rows]
+    listTime = [row[1] for row in class_rows]
+
+    student_payload = retrive_data(listclass) if listclass else {}
+
+    localStorage_data = {
+        "attendanceData": '[]',
         "classes": json.dumps(listclass),
-        # "colors": '{}',
-        # "debug": "honey:core-sdk:*",
-        "students": json.dumps(retrive_data(listclass)),
+        "students": json.dumps(student_payload),
         "listTime": json.dumps(listTime)
     }
 
-    return render_template('attendance.html',localStorage_data=localStorage_data)
+    return render_template('attendance.html', localStorage_data=localStorage_data)
 
 @app.route('/submit_fill_class',methods=['POST','GET'])
 @login_required
@@ -859,7 +1029,7 @@ def retrive_data(classes):
                 SELECT s.StudentID, s.fname, s.Lname
                 FROM enrollment e
                 JOIN Student s ON e.studentID = s.StudentID
-                WHERE e.subject_code = :subject_code
+                WHERE e.subject_code = :subject_code AND s.status='approved'
             """)
             students = conn.execute(enrollment_query, {"subject_code": subject_code}).fetchall()
 
@@ -897,7 +1067,7 @@ def fill_class():
 
     try:
         with engine.connect() as conn:
-            query = sqlalchemy.text("SELECT fname, Lname, StudentID FROM Student")
+            query = sqlalchemy.text("SELECT fname, Lname, StudentID FROM Student WHERE status='approved'")
             result = conn.execute(query)
 
             for row in result:

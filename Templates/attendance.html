@@ -36,6 +36,7 @@
             <button id="admin" onclick="window.location.href='/admin/dashboard'">Admin</button>
             {% endif %}
             {% if current_role in ['teacher', 'superadmin'] %}
+            <button onclick="window.location.href='/pending_students'">Pending Students</button>
             <button onclick="window.location.href='/teacher/dashboard'">Teacher Dashboard</button>
             {% endif %}
             <button id="logout" style="background-color: red;" onclick="window.location.href='/logout'">Logout
@@ -58,29 +59,17 @@
         <div class="form-container">
             <div id="formSection">
                 <h2>Mark Attendance</h2>
-                <div><button id="startSocket" style="display: block;">
-                    Start Socket
-                </button>
-                <button id="stopSocket" style="display: none;">
-                    Stop Socket
-                </button></div><br>
-                <button id="addStudentBtn">
-                    Register Student
-                </button>
-                <button id="addLinkButton" 
-                    onclick="showlinkStudentForm()">
-                    Link Student
-                </button>
-                <button id="addClassButton" 
-                    onclick="showAddClassForm()">
-                    Add Class
-                </button>
-
-                <button id="showAttendance" 
-                    onclick="window.location.href='/calendar'">
-                    Show Attendance
-                </button><br>
-                <div style="padding-top: 10px;">
+                <div class="action-buttons">
+                    <button class="secondary" id="startSocket" style="display: block;">Start Socket</button>
+                    <button class="secondary" id="stopSocket" style="display: none;">Stop Socket</button>
+                    <button id="addStudentBtn">Register Student</button>
+                    <button id="addLinkButton" onclick="showlinkStudentForm()">Link Student</button>
+                    {% if current_role == 'superadmin' %}
+                    <button id="addClassButton" onclick="showAddClassForm()">Add Class</button>
+                    {% endif %}
+                    <button id="showAttendance" onclick="window.location.href='/calendar'">Show Attendance</button>
+                </div>
+                <div>
                 <label for="classSelector">Class:</label>
                 <select id="classSelector" required 
                     onchange="showStudentsList()" style="margin-right: 20px;">
@@ -97,25 +86,27 @@
 
                 <div id="summarySection">
                     <h3>Summary</h3>
-                    <p>
-                        Total Students: 
-                        <span id="totalStudents">0</span>
-                    </p>
-                    <p>
-                        Total Present: 
-                        <span id="totalPresent">0</span>
-                    </p>
-                    <p>
-                        Total Absent: 
-                        <span id="totalAbsent">0</span>
-                    </p>
-                    <p>
-                        Total Late: 
-                        <span id="totalLeave">0</span>
-                    </p>
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <span>Total Students</span>
+                            <strong id="totalStudents">0</strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Present</span>
+                            <strong id="totalPresent">0</strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Absent</span>
+                            <strong id="totalAbsent">0</strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Late</span>
+                            <strong id="totalLeave">0</strong>
+                        </div>
+                    </div>
                 </div>
 
-                <button onclick="handleRestrictedButtonClick(submitAttendance)">
+                <button style="margin-top:12px;" onclick="handleRestrictedButtonClick(submitAttendance)">
                     Submit Attendance
                 </button>
 
@@ -188,10 +179,11 @@
     <div id="myModal" class="modal">
         <div class="modal-content">
           <span class="modal-close">&times;</span>
-          <h2>Session Password Required</h2>
-          <p>Please enter the session password:</p>
-          <input type="password" id="passwordInput">
-          <button id="submitButton">Submit</button>
+          <h2>Confirm Action</h2>
+          <p>Please re-enter your password to proceed.</p>
+          <input type="password" id="passwordInput" placeholder="Enter password">
+          <p id="modalError" class="modal-error"></p>
+          <button id="submitButton">Confirm</button>
         </div>
       </div>
     

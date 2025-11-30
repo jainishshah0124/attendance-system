@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS Student (
     phone VARCHAR(32),
     address VARCHAR(255),
     email VARCHAR(255),
-    photo_path VARCHAR(512)
+    photo_path VARCHAR(512),
+    status ENUM('pending','approved') NOT NULL DEFAULT 'pending'
 );
 
 -- Classes offered in the system

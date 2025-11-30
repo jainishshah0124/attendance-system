@@ -504,37 +504,45 @@ function updateAttendanceRecord
         JSON.stringify(selectedClass));
 }
 
+function getRosterForClass(selectedClass) {
+    const savedStudents = JSON.parse(localStorage.getItem('students')) || {};
+    return savedStudents[selectedClass] || [];
+}
+
+function getAttendanceForClass(selectedClass) {
+    const savedAttendanceData = JSON.parse(localStorage.getItem('attendanceData')) || [];
+    return savedAttendanceData.filter(record => record.class === selectedClass);
+}
+
+function calculateSummary(selectedClass) {
+    const roster = getRosterForClass(selectedClass);
+    const attendance = getAttendanceForClass(selectedClass);
+
+    const rosterIds = roster.map(student => String(student.rollNumber));
+    const presentCount = attendance.filter(record => record.status === 'present').length;
+    const lateCount = attendance.filter(record => record.status === 'late').length;
+    const absentExplicit = attendance.filter(record => record.status === 'absent').length;
+    const totalStudents = rosterIds.length;
+
+    return {
+        totalStudents,
+        presentCount,
+        lateCount,
+        absentCount: absentExplicit
+    };
+}
+
 function showSummary(selectedClass) {
-    const savedAttendanceData = JSON.parse
-        (localStorage.getItem('attendanceData')) || [];
-
-    // Filter attendance data based on the selected class
-    const filteredAttendanceData = savedAttendanceData.
-        filter(record => record.class === selectedClass);
-
-    const totalStudents = filteredAttendanceData.
-        reduce((acc, record) => {
-            if (!acc.includes(record.name)) {
-                acc.push(record.name);
-            }
-            return acc;
-        }, []).length;
-
-    const totalPresent = filteredAttendanceData.
-        filter(record => record.status === 'present').length;
-    const totalAbsent = filteredAttendanceData.
-        filter(record => record.status === 'absent').length;
-    const totalLeave = filteredAttendanceData.
-        filter(record => record.status === 'leave').length;
+    const { totalStudents, presentCount, lateCount, absentCount } = calculateSummary(selectedClass);
 
     document.getElementById('totalStudents').
         innerText = totalStudents;
     document.getElementById('totalPresent').
-        innerText = totalPresent;
+        innerText = presentCount;
     document.getElementById('totalAbsent').
-        innerText = totalAbsent;
+        innerText = absentCount;
     document.getElementById('totalLeave').
-        innerText = totalLeave;
+        innerText = lateCount;
 }
 
 function getCurrentDate() {
@@ -630,30 +638,32 @@ function handleRestrictedButtonClick(callingLogic) {
 
   }
 
-  function handleSubmitButtonClick(callingLogic) {
-    var modal = document.getElementById("myModal");
-    // Get the password input field
-    var password = document.getElementById("passwordInput").value;
-    // Check if password is correct (e.g., compare with session password)
-    if (password === "admin") {
-      modal.style.display = "none";
-      passwordInput.value="";
-      callingLogic();
-    } else {
-      console.log("Incorrect password");
-      // Highlight the input field to indicate incorrect password
-      passwordInput.classList.add('incorrect-password');
-      var modalContent = document.getElementsByClassName("modal-content")[0];
-      // display an error message
-      var errorMessage = document.createElement('p');
-      errorMessage.textContent = 'Incorrect password. Please try again.';
-      errorMessage.classList.add('error-message');
-      modalContent.appendChild(errorMessage);
-      // clear password input field after a delay
-      setTimeout(function() {
-          passwordInput.value = "";
-          passwordInput.classList.remove('incorrect-password');
-          errorMessage.remove();
-          }, 2000); // Change delay as needed
-      }
-  }
+async function handleSubmitButtonClick(callingLogic) {
+    const modal = document.getElementById("myModal");
+    const passwordInput = document.getElementById("passwordInput");
+    const password = passwordInput.value;
+    const errorBox = document.getElementById("modalError");
+    errorBox.textContent = '';
+
+    try {
+        const response = await fetch('/api/verify-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+        const data = await response.json();
+        if (response.ok && data.valid) {
+            modal.style.display = "none";
+            passwordInput.value = "";
+            callingLogic();
+        } else {
+            errorBox.textContent = data.message || 'Incorrect password. Please try again.';
+            passwordInput.classList.add('incorrect-password');
+            setTimeout(() => {
+                passwordInput.classList.remove('incorrect-password');
+            }, 2000);
+        }
+    } catch (err) {
+        errorBox.textContent = 'Unable to verify password. Please try again.';
+    }
+}
