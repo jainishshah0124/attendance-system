@@ -58,12 +58,25 @@ def build_signed_url(photo_path):
             bucket = client.bucket(bucket_name)
             blob = bucket.blob(blob_name)
             credentials, _ = google.auth.default()
+            if hasattr(credentials, "with_scopes"):
+                credentials = credentials.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
             if not credentials.valid:
                 credentials.refresh(Request())
-            return blob.generate_signed_url(
-                expiration=timedelta(minutes=30),
-                credentials=credentials
-            )
+            try:
+                return blob.generate_signed_url(
+                    expiration=timedelta(minutes=30),
+                    credentials=credentials
+                )
+            except Exception:
+                service_email = getattr(credentials, 'service_account_email', None)
+                token = getattr(credentials, 'token', None)
+                if service_email and token:
+                    return blob.generate_signed_url(
+                        expiration=timedelta(minutes=30),
+                        service_account_email=service_email,
+                        access_token=token
+                    )
+                raise
         except Exception as exc:
             print(f"Unable to sign URL for {photo_path}: {exc}")
             return None
