@@ -10,6 +10,8 @@ import json
 from google.cloud import storage
 import io
 from datetime import datetime, timedelta
+import google.auth
+from google.auth.transport.requests import Request
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from sib_api_v3_sdk import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
@@ -55,7 +57,13 @@ def build_signed_url(photo_path):
             client = storage.Client()
             bucket = client.bucket(bucket_name)
             blob = bucket.blob(blob_name)
-            return blob.generate_signed_url(expiration=timedelta(minutes=30))
+            credentials, _ = google.auth.default()
+            if not credentials.valid:
+                credentials.refresh(Request())
+            return blob.generate_signed_url(
+                expiration=timedelta(minutes=30),
+                credentials=credentials
+            )
         except Exception as exc:
             print(f"Unable to sign URL for {photo_path}: {exc}")
             return None
