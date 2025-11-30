@@ -1,4 +1,4 @@
-from flask import Flask,render_template,request,redirect,url_for, jsonify, session
+from flask import Flask,render_template,request,redirect,url_for, jsonify, session, abort, flash
 from connection import engine
 import sqlalchemy
 import os
@@ -10,31 +10,205 @@ import json
 from google.cloud import storage
 import io
 from datetime import datetime
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
+from sib_api_v3_sdk import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
 
 
 app = Flask(__name__,template_folder=os.getcwd()+'/Templates')
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 
-def ensure_attendance_table():
-    ddl = """
-    CREATE TABLE IF NOT EXISTS attendance (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        student_id VARCHAR(64) NOT NULL,
-        student_name VARCHAR(255) NOT NULL,
-        class_code VARCHAR(255) NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        record_date DATE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_attendance_entry (student_id, class_code, record_date)
-    )
+# Brevo (Sendinblue) transactional email configuration.
+# Set BREVO_API_KEY/ BREVO_FROM_EMAIL / BREVO_FROM_NAME in the environment to enable notifications.
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
+BREVO_FROM_EMAIL = os.environ.get('BREVO_FROM_EMAIL', 'no-reply@example.com')
+BREVO_FROM_NAME = os.environ.get('BREVO_FROM_NAME', 'Attendance System')
+brevo_api = None
+
+if BREVO_API_KEY:
+    brevo_config = Configuration()
+    brevo_config.api_key['api-key'] = BREVO_API_KEY
+    brevo_api = TransactionalEmailsApi(ApiClient(brevo_config))
+
+def login_required(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session:
+            next_url = request.path if request.method == 'GET' else url_for('attendance')
+            return redirect(url_for('login', next=next_url))
+        return view_func(*args, **kwargs)
+    return wrapper
+
+def role_required(required_role):
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(*args, **kwargs):
+            if session.get('role') != required_role:
+                return abort(403)
+            return view_func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.context_processor
+def inject_user():
+    return {
+        "current_user": session.get('username'),
+        "current_role": session.get('role')
+    }
+
+
+def get_system_stats():
+    stats = {
+        "students": 0,
+        "teachers": 0,
+        "classes": 0,
+        "attendance_records": 0
+    }
+    with engine.connect() as conn:
+        stats["students"] = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM Student")).scalar() or 0
+        stats["classes"] = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM class")).scalar() or 0
+        stats["attendance_records"] = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM attendance")).scalar() or 0
+        stats["teachers"] = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM users WHERE role='teacher'")).scalar() or 0
+    return stats
+
+
+def get_recent_attendance(days=14):
+    query = """
+        SELECT record_date, status, COUNT(*) as count
+        FROM attendance
+        WHERE record_date >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+        GROUP BY record_date, status
+        ORDER BY record_date DESC
+    """
+    analytics = {}
+    with engine.connect() as conn:
+        rows = conn.execute(sqlalchemy.text(query), {"days": days}).fetchall()
+        for row in rows:
+            date_key = row.record_date.strftime("%Y-%m-%d")
+            analytics.setdefault(date_key, {"Present": 0, "Absent": 0, "Late": 0})
+            analytics[date_key][row.status.capitalize()] = int(row.count)
+    return dict(sorted(analytics.items(), reverse=True))
+
+
+def get_admin_reference_data():
+    with engine.connect() as conn:
+        classes = conn.execute(sqlalchemy.text("SELECT subject_code FROM class ORDER BY subject_code")).fetchall()
+        teachers = conn.execute(sqlalchemy.text("SELECT id, username FROM users WHERE role='teacher' ORDER BY username")).fetchall()
+        students = conn.execute(sqlalchemy.text("SELECT StudentID, fname, Lname FROM Student ORDER BY fname")).fetchall()
+        assignments = conn.execute(sqlalchemy.text("""
+            SELECT tc.id, u.username, tc.subject_code
+            FROM teacher_class tc
+            JOIN users u ON u.id = tc.teacher_id
+            ORDER BY u.username
+        """)).fetchall()
+    return {
+        "classes": classes,
+        "teachers": teachers,
+        "students": students,
+        "assignments": assignments
+    }
+
+
+def get_teacher_dashboard_data(teacher_id):
+    data = {
+        "classes": [],
+        "students": [],
+        "total_students": 0
+    }
+    with engine.connect() as conn:
+        class_rows = conn.execute(sqlalchemy.text("""
+            SELECT c.subject_code, c.start_time
+            FROM teacher_class tc
+            JOIN class c ON c.subject_code = tc.subject_code
+            WHERE tc.teacher_id = :tid
+            ORDER BY c.subject_code
+        """), {"tid": teacher_id}).fetchall()
+
+        all_students = conn.execute(sqlalchemy.text("""
+            SELECT StudentID, fname, Lname
+            FROM Student
+            ORDER BY fname
+        """)).fetchall()
+
+        for row in class_rows:
+            enrolled = conn.execute(sqlalchemy.text("""
+                SELECT s.StudentID, s.fname, s.Lname
+                FROM enrollment e
+                JOIN Student s ON s.StudentID = e.studentID
+                WHERE e.subject_code = :code
+                ORDER BY s.fname
+            """), {"code": row.subject_code}).fetchall()
+            student_list = [
+                {"id": stu.StudentID, "name": f"{stu.fname} {stu.Lname}"}
+                for stu in enrolled
+            ]
+            data["classes"].append({
+                "subject_code": row.subject_code,
+                "start_time": row.start_time,
+                "students": student_list,
+                "student_count": len(student_list)
+            })
+            data["total_students"] += len(student_list)
+
+    data["students"] = all_students
+    return data
+
+
+def fetch_student_contacts(student_ids):
+    if not student_ids:
+        return {}
+    placeholders = ",".join([":id{}".format(i) for i in range(len(student_ids))])
+    params = {f"id{i}": sid for i, sid in enumerate(student_ids)}
+    query = f"""
+        SELECT StudentID, fname, Lname, email
+        FROM Student
+        WHERE StudentID IN ({placeholders})
     """
     with engine.connect() as conn:
-        conn.execute(sqlalchemy.text(ddl))
-        conn.commit()
+        rows = conn.execute(sqlalchemy.text(query), params).fetchall()
+    contacts = {}
+    for row in rows:
+        contacts[int(row.StudentID)] = {
+            "name": f"{row.fname} {row.Lname}",
+            "email": row.email
+        }
+    return contacts
 
 
-ensure_attendance_table()
+def send_attendance_notifications(records):
+    if not brevo_api or not records:
+        return
+    student_ids = {int(rec["student_id"]) for rec in records}
+    contacts = fetch_student_contacts(student_ids)
+    for record in records:
+        sid = int(record["student_id"])
+        contact = contacts.get(sid)
+        if not contact or not contact.get("email"):
+            continue
+        try:
+            print(os.environ.get('BREVO_API_KEY'))
+            record_date = record["record_date"]
+            if hasattr(record_date, "strftime"):
+                record_date_str = record_date.strftime("%Y-%m-%d")
+            else:
+                record_date_str = str(record_date)
+            email = SendSmtpEmail(
+                to=[{"email": contact["email"], "name": contact["name"]}],
+                sender={"email": BREVO_FROM_EMAIL, "name": BREVO_FROM_NAME},
+                subject=f"Attendance Update: {record['class_code']} on {record_date_str}",
+                html_content=(
+                    f"<p>Hi {contact['name']},</p>"
+                    f"<p>Your attendance for <strong>{record['class_code']}</strong> on {record_date_str} "
+                    f"was marked as <strong>{record['status'].title()}</strong>.</p>"
+                    "<p>If you believe this is incorrect, please contact your instructor.</p>"
+                    "<p>– Attendance System</p>"
+                )
+            )
+            print(brevo_api.send_transac_email(email))
+        except Exception as exc:
+            print(f"Failed to send email for student {sid}: {exc}")
 
 
 @app.route('/checkConn')
@@ -47,11 +221,369 @@ def checkConn():
     except Exception as e:
         return f"Error connecting to database: {e}"
 
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('attendance'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        next_url = request.args.get('next') or url_for('attendance')
+
+        if not username or not password:
+            error = "Username and password are required."
+        else:
+            query = sqlalchemy.text("SELECT id, username, password_hash, role FROM users WHERE username=:username LIMIT 1")
+            with engine.connect() as conn:
+                row = conn.execute(query, {"username": username}).fetchone()
+            if row and check_password_hash(row.password_hash, password):
+                session['user_id'] = row.id
+                session['username'] = row.username
+                session['role'] = row.role
+                return redirect(next_url)
+            else:
+                error = "Invalid username or password."
+
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+@login_required
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/admin/dashboard')
+@login_required
+@role_required('superadmin')
+def admin_dashboard():
+    stats = get_system_stats()
+    analytics = get_recent_attendance()
+    refs = get_admin_reference_data()
+    return render_template(
+        'admin_dashboard.html',
+        stats=stats,
+        analytics=analytics,
+        classes=refs["classes"],
+        teachers=refs["teachers"],
+        students=refs["students"],
+        assignments=refs["assignments"]
+    )
+
+@app.route('/teacher/dashboard')
+@login_required
+def teacher_dashboard():
+    role = session.get('role')
+    if role not in ('teacher', 'superadmin'):
+        return abort(403)
+    data = get_teacher_dashboard_data(session['user_id'])
+    return render_template(
+        'teacher_dashboard.html',
+        classes=data["classes"],
+        total_classes=len(data["classes"]),
+        total_students=data["total_students"],
+        students=data["students"]
+    )
+
+@app.route('/admin/classes', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def admin_create_class():
+    subject_code = request.form.get('subject_code', '').strip()
+    start_time = request.form.get('start_time', '').strip()
+    if not subject_code or not start_time:
+        flash("Subject code and start time are required.", "error")
+        return redirect(url_for('admin_dashboard'))
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sqlalchemy.text("INSERT INTO class (subject_code, start_time) VALUES (:subject_code, :start_time)"),
+                {"subject_code": subject_code, "start_time": start_time}
+            )
+        flash("Class created successfully.", "success")
+    except Exception as exc:
+        flash(f"Failed to create class: {exc}", "error")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/teachers', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def admin_create_teacher():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+    if not username or not password:
+        flash("Username and password are required.", "error")
+        return redirect(url_for('admin_dashboard'))
+
+    try:
+        password_hash = generate_password_hash(password)
+        with engine.begin() as conn:
+            conn.execute(
+                sqlalchemy.text("INSERT INTO users (username, password_hash, role) VALUES (:username, :password_hash, 'teacher')"),
+                {"username": username, "password_hash": password_hash}
+            )
+        flash("Teacher account created.", "success")
+    except Exception as exc:
+        flash(f"Failed to create teacher: {exc}", "error")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/assign-teacher', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def admin_assign_teacher():
+    teacher_id = request.form.get('teacher_id')
+    subject_code = request.form.get('subject_code')
+    if not teacher_id or not subject_code:
+        flash("Teacher and class selection required.", "error")
+        return redirect(url_for('admin_dashboard'))
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sqlalchemy.text("""
+                    INSERT INTO teacher_class (teacher_id, subject_code)
+                    VALUES (:teacher_id, :subject_code)
+                    ON DUPLICATE KEY UPDATE subject_code = VALUES(subject_code)
+                """),
+                {"teacher_id": int(teacher_id), "subject_code": subject_code}
+            )
+        flash("Teacher assigned to class.", "success")
+    except Exception as exc:
+        flash(f"Failed to assign teacher: {exc}", "error")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/assign-student', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def admin_assign_student():
+    student_id = request.form.get('student_id')
+    subject_code = request.form.get('subject_code')
+    if not student_id or not subject_code:
+        flash("Student and class selection required.", "error")
+        return redirect(url_for('admin_dashboard'))
+
+    try:
+        with engine.begin() as conn:
+            exists = conn.execute(
+                sqlalchemy.text("SELECT 1 FROM enrollment WHERE studentID=:sid AND subject_code=:code"),
+                {"sid": int(student_id), "code": subject_code}
+            ).fetchone()
+            if exists:
+                flash("Student already assigned to this class.", "info")
+            else:
+                conn.execute(
+                    sqlalchemy.text("INSERT INTO enrollment (studentID, subject_code) VALUES (:sid, :code)"),
+                    {"sid": int(student_id), "code": subject_code}
+                )
+                flash("Student assigned to class.", "success")
+    except Exception as exc:
+        flash(f"Failed to assign student: {exc}", "error")
+    return redirect(url_for('admin_dashboard'))
+
+def _json_response(query, params=None):
+    params = params or {}
+    with engine.connect() as conn:
+        result = conn.execute(sqlalchemy.text(query), params).mappings().all()
+        return [dict(row) for row in result]
+
+@app.route('/admin/api/classes', methods=['GET'])
+@login_required
+@role_required('superadmin')
+def api_list_classes():
+    rows = _json_response("SELECT id, subject_code, start_time FROM class ORDER BY subject_code")
+    return jsonify(rows)
+
+@app.route('/admin/api/classes', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def api_create_class():
+    data = request.get_json() or {}
+    subject_code = data.get('subject_code', '').strip()
+    start_time = data.get('start_time', '').strip()
+    if not subject_code or not start_time:
+        return jsonify({"error": "subject_code and start_time required"}), 400
+    with engine.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("INSERT INTO class (subject_code, start_time) VALUES (:subject_code, :start_time)"),
+            {"subject_code": subject_code, "start_time": start_time}
+        )
+    return jsonify({"message": "class created"}), 201
+
+@app.route('/admin/api/classes/<subject_code>', methods=['DELETE'])
+@login_required
+@role_required('superadmin')
+def api_delete_class(subject_code):
+    with engine.begin() as conn:
+        conn.execute(sqlalchemy.text("DELETE FROM class WHERE subject_code=:code"), {"code": subject_code})
+    return jsonify({"message": "class deleted"})
+
+@app.route('/admin/api/teachers', methods=['GET'])
+@login_required
+@role_required('superadmin')
+def api_list_teachers():
+    rows = _json_response("SELECT id, username, role, created_at FROM users WHERE role='teacher' ORDER BY username")
+    return jsonify(rows)
+
+@app.route('/admin/api/teachers', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def api_create_teacher():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({"error": "username and password required"}), 400
+    password_hash = generate_password_hash(password)
+    with engine.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("INSERT INTO users (username, password_hash, role) VALUES (:username, :password_hash, 'teacher')"),
+            {"username": username, "password_hash": password_hash}
+        )
+    return jsonify({"message": "teacher created"}), 201
+
+@app.route('/admin/api/teachers/<int:teacher_id>', methods=['DELETE'])
+@login_required
+@role_required('superadmin')
+def api_delete_teacher(teacher_id):
+    with engine.begin() as conn:
+        user = conn.execute(sqlalchemy.text("SELECT role FROM users WHERE id=:id"), {"id": teacher_id}).fetchone()
+        if not user:
+            return jsonify({"error": "teacher not found"}), 404
+        if user.role != 'teacher':
+            return jsonify({"error": "cannot delete non-teacher account"}), 400
+        conn.execute(sqlalchemy.text("DELETE FROM users WHERE id=:id"), {"id": teacher_id})
+    return jsonify({"message": "teacher deleted"})
+
+@app.route('/admin/api/assignments', methods=['GET'])
+@login_required
+@role_required('superadmin')
+def api_list_assignments():
+    rows = _json_response("""
+        SELECT tc.id, tc.teacher_id, tc.subject_code, u.username
+        FROM teacher_class tc
+        JOIN users u ON u.id = tc.teacher_id
+        ORDER BY u.username
+    """)
+    return jsonify(rows)
+
+@app.route('/admin/api/assignments', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def api_create_assignment():
+    data = request.get_json() or {}
+    teacher_id = data.get('teacher_id')
+    subject_code = data.get('subject_code')
+    if not teacher_id or not subject_code:
+        return jsonify({"error": "teacher_id and subject_code required"}), 400
+    with engine.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("""
+                INSERT INTO teacher_class (teacher_id, subject_code)
+                VALUES (:teacher_id, :subject_code)
+                ON DUPLICATE KEY UPDATE subject_code = VALUES(subject_code)
+            """),
+            {"teacher_id": int(teacher_id), "subject_code": subject_code}
+        )
+    return jsonify({"message": "assignment saved"}), 201
+
+@app.route('/admin/api/assignments/<int:assignment_id>', methods=['DELETE'])
+@login_required
+@role_required('superadmin')
+def api_delete_assignment(assignment_id):
+    with engine.begin() as conn:
+        conn.execute(sqlalchemy.text("DELETE FROM teacher_class WHERE id=:id"), {"id": assignment_id})
+    return jsonify({"message": "assignment deleted"})
+
+@app.route('/admin/api/student-assignments', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def api_assign_student_class():
+    data = request.get_json() or {}
+    student_id = data.get('student_id')
+    subject_code = data.get('subject_code')
+    if not student_id or not subject_code:
+        return jsonify({"error": "student_id and subject_code required"}), 400
+    with engine.begin() as conn:
+        exists = conn.execute(
+            sqlalchemy.text("SELECT 1 FROM enrollment WHERE studentID=:sid AND subject_code=:code"),
+            {"sid": int(student_id), "code": subject_code}
+        ).fetchone()
+        if exists:
+            return jsonify({"message": "student already assigned"}), 200
+        conn.execute(
+            sqlalchemy.text("INSERT INTO enrollment (studentID, subject_code) VALUES (:sid, :code)"),
+            {"sid": int(student_id), "code": subject_code}
+        )
+    return jsonify({"message": "student assigned"}), 201
+
+@app.route('/admin/api/student-assignments', methods=['DELETE'])
+@login_required
+@role_required('superadmin')
+def api_delete_student_assignment():
+    student_id = request.args.get('student_id')
+    subject_code = request.args.get('subject_code')
+    if not student_id or not subject_code:
+        return jsonify({"error": "student_id and subject_code required"}), 400
+    with engine.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("DELETE FROM enrollment WHERE studentID=:sid AND subject_code=:code"),
+            {"sid": int(student_id), "code": subject_code}
+        )
+    return jsonify({"message": "student assignment removed"})
+
+@app.route('/teacher/assign-student', methods=['POST'])
+@login_required
+def teacher_assign_student():
+    role = session.get('role')
+    if role not in ('teacher', 'superadmin'):
+        return abort(403)
+    student_id = request.form.get('student_id')
+    subject_code = request.form.get('subject_code')
+    if not student_id or not subject_code:
+        flash("Student and class selection required.", "error")
+        return redirect(url_for('teacher_dashboard'))
+
+    try:
+        with engine.begin() as conn:
+            if role != 'superadmin':
+                allowed = conn.execute(
+                    sqlalchemy.text("""
+                        SELECT 1 FROM teacher_class
+                        WHERE teacher_id = :tid AND subject_code = :code
+                    """),
+                    {"tid": session['user_id'], "code": subject_code}
+                ).fetchone()
+                if not allowed:
+                    flash("You are not assigned to this class.", "error")
+                    return redirect(url_for('teacher_dashboard'))
+
+            exists = conn.execute(
+                sqlalchemy.text("SELECT 1 FROM enrollment WHERE studentID=:sid AND subject_code=:code"),
+                {"sid": int(student_id), "code": subject_code}
+            ).fetchone()
+            if exists:
+                flash("Student already linked to this class.", "info")
+            else:
+                conn.execute(
+                    sqlalchemy.text("INSERT INTO enrollment (studentID, subject_code) VALUES (:sid, :code)"),
+                    {"sid": int(student_id), "code": subject_code}
+                )
+                flash("Student linked successfully.", "success")
+    except Exception as exc:
+        flash(f"Failed to link student: {exc}", "error")
+    return redirect(url_for('teacher_dashboard'))
 @app.route('/register')
+@login_required
 def register():
     return render_template('registration.html')
 
 @app.route('/imageCapture',methods=['POST'])
+@login_required
 def imageCapture():
     try:
         data = {
@@ -84,6 +616,7 @@ def imageCapture():
         return render_template('registration.html',error=str(e))
     
 @app.route('/save_image',methods=['POST','GET'])
+@login_required
 def save_image():
     image_data = request.form['imageData']
     employee_id = request.form['employee_id']
@@ -134,6 +667,7 @@ def save_image():
     return redirect('/attendance')
 
 @app.route('/submitAttendance', methods=['POST'])
+@login_required
 def submit_attendance():
     payload = request.get_json(silent=True) or {}
     attendance_records = payload.get('attendanceData') or []
@@ -183,9 +717,12 @@ def submit_attendance():
     with engine.begin() as conn:
         conn.execute(insert_stmt, normalized_rows)
 
+    send_attendance_notifications(normalized_rows)
+
     return jsonify({"message": "Attendance stored", "rows": len(normalized_rows)}), 200
 
 @app.route('/add_class',methods=['POST'])
+@login_required
 def add_class():
     start_time = request.form['Time']
     subject_code = request.form['newClassName']
@@ -225,6 +762,7 @@ def list_class_student():
 
 
 @app.route('/attendance')
+@login_required
 def attendance():
     classes=list_classes()
     listclass=[]
@@ -250,6 +788,7 @@ def attendance():
     return render_template('attendance.html',localStorage_data=localStorage_data)
 
 @app.route('/submit_fill_class',methods=['POST','GET'])
+@login_required
 def submit_fill_class():
     class_selected=request.form.getlist('classSelector')
     checked_students = request.form.getlist('students')
@@ -352,6 +891,7 @@ def list_classes():
 
 
 @app.route('/fill_class')
+@login_required
 def fill_class():
     freshData = []
 
@@ -395,6 +935,7 @@ def fill_class():
     return render_template('fill_class.html',localStorage_data=localStorage_data)
 
 @app.route('/calendar')
+@login_required
 def calendar():
     # if 'username' not in session:
     #         error_message = "Please Login"
@@ -414,6 +955,7 @@ def ensure_rgb_uint8(image: np.ndarray) -> np.ndarray:
     return np.require(image, dtype=np.uint8, requirements=['C_CONTIGUOUS', 'ALIGNED'])
 
 @app.route('/handle_frameData',methods=['POST'])
+@login_required
 def handle_frameData():
     # print('start')
     data = request.json
@@ -536,6 +1078,7 @@ def handle_frameData():
     return name
 
 @app.route('/api/attendance/summary', methods=['GET'])
+@login_required
 def attendance_summary():
     class_code = request.args.get('class')
     month = request.args.get('month')  # format YYYY-MM
@@ -569,6 +1112,7 @@ def attendance_summary():
     return jsonify({"data": rows})
 
 @app.route('/api/attendance/details', methods=['GET'])
+@login_required
 def attendance_details():
     class_code = request.args.get('class')
     record_date = request.args.get('date')

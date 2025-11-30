@@ -30,6 +30,12 @@
         <div>
             <button id="back" onclick="window.location.href='/attendance'">Back
             </button>
+            {% if current_role in ['teacher', 'superadmin'] %}
+            <button onclick="window.location.href='/teacher/dashboard'">Teacher Dashboard</button>
+            {% endif %}
+            {% if current_role == 'superadmin' %}
+            <button onclick="window.location.href='/admin/dashboard'">Admin</button>
+            {% endif %}
             <button id="logout" style="background-color: red;" onclick="window.location.href='/logout'">Logout
             </button>
         </div>

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: "Quicksand", sans-serif;
+            background-color: #12121f;
+            color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background-color: #2c3e50;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .navbar .actions button {
+            margin-left: 1rem;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .container {
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+        }
+        .card {
+            background: #1f1f2d;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 1rem 2rem rgba(0,0,0,0.25);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        .stat {
+            background: #27273a;
+            border-radius: 0.8rem;
+            padding: 1rem;
+            text-align: center;
+        }
+        .stat h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            letter-spacing: 0.05rem;
+            color: #9aa9b8;
+        }
+        .stat p {
+            font-size: 2rem;
+            margin: 0.5rem 0 0;
+            font-weight: 700;
+        }
+        .class-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .class-item {
+            border-bottom: 1px solid #2c2c3f;
+            padding: 1rem 0;
+        }
+        .class-item:last-child {
+            border-bottom: none;
+        }
+        .class-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .class-header h3 {
+            margin: 0;
+        }
+        .pill {
+            background: #167e56;
+            padding: 0.2rem 0.8rem;
+            border-radius: 999px;
+            font-size: 0.9rem;
+        }
+        form label {
+            display: block;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+        }
+        form select {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 0.5rem;
+            border: none;
+            margin-bottom: 1rem;
+            background: #2c2c3f;
+            color: #fff;
+        }
+        form button {
+            padding: 0.9rem 1.2rem;
+            background: #167e56;
+            border: none;
+            border-radius: 0.6rem;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .messages {
+            padding: 0 2rem;
+        }
+        .flash {
+            background: #2c3e50;
+            border-left: 4px solid #167e56;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0.4rem;
+        }
+        .flash.error { border-color: #e74c3c; }
+        .flash.info { border-color: #f1c40f; }
+        .student-list {
+            margin: 0.5rem 0 0;
+            padding-left: 1.2rem;
+            color: #cfd8dc;
+        }
+        .empty {
+            color: #9aa9b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>Teacher Dashboard</h1>
+        <div class="actions">
+            <button onclick="window.location.href='{{ url_for('attendance') }}'">Open Attendance</button>
+            <button onclick="window.location.href='{{ url_for('calendar') }}'">View Calendar</button>
+            <button onclick="window.location.href='{{ url_for('logout') }}'" style="background:#e74c3c">Logout</button>
+        </div>
+    </div>
+
+    <div class="messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>My Stats</h2>
+            <div class="stats-grid">
+                <div class="stat">
+                    <h3>Assigned Classes</h3>
+                    <p>{{ total_classes }}</p>
+                </div>
+                <div class="stat">
+                    <h3>Total Students</h3>
+                    <p>{{ total_students }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Assigned Classes</h2>
+            {% if classes %}
+            <ul class="class-list">
+                {% for cls in classes %}
+                <li class="class-item">
+                    <div class="class-header">
+                        <h3>{{ cls.subject_code }}</h3>
+                        <span class="pill">{{ cls.student_count }} students</span>
+                    </div>
+                    <p>Start time: {{ cls.start_time }}</p>
+                    {% if cls.students %}
+                    <ul class="student-list">
+                        {% for student in cls.students %}
+                        <li>{{ student.name }} ({{ student.id }})</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="empty">No students linked yet.</p>
+                    {% endif %}
+                    <button style="margin-top:0.8rem" onclick="window.location.href='/attendance?class={{ cls.subject_code }}'">Start Attendance</button>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty">You are not assigned to any classes yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Link Student to Class</h2>
+            {% if classes %}
+            <form method="POST" action="{{ url_for('teacher_assign_student') }}">
+                <label for="teacher_class">Class</label>
+                <select id="teacher_class" name="subject_code" required>
+                    <option value="">Select class</option>
+                    {% for cls in classes %}
+                        <option value="{{ cls.subject_code }}">{{ cls.subject_code }}</option>
+                    {% endfor %}
+                </select>
+                <label for="teacher_student">Student</label>
+                <select id="teacher_student" name="student_id" required>
+                    <option value="">Select student</option>
+                    {% for student in students %}
+                        <option value="{{ student.StudentID }}">{{ student.fname }} {{ student.Lname }} ({{ student.StudentID }})</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Link Student</button>
+            </form>
+            {% else %}
+            <p class="empty">No classes available to link students. Contact an administrator.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

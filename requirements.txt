@@ -19,3 +19,4 @@ sqlalchemy
 pymysql 
 cloud-sql-python-connector[pytds]
 google-cloud-storage
+sib-api-v3-sdk
