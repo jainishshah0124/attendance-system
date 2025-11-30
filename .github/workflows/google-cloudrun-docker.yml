@@ -97,9 +97,9 @@ jobs:
 
           image: '${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_Name }}/${{ env.SERVICE }}:${{ github.sha }}'
           flags: |
-            --set-env-vars=BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}
-            --set-env-vars=BREVO_FROM_EMAIL=${{ secrets.BREVO_FROM_EMAIL }}
-            --set-env-vars=BREVO_FROM_NAME=${{ secrets.BREVO_FROM_NAME }}
+            --set-env-vars=BREVO_API_KEY="${{ secrets.BREVO_API_KEY }}"
+            --set-env-vars=BREVO_FROM_EMAIL="${{ secrets.BREVO_FROM_EMAIL }}"
+            --set-env-vars=BREVO_FROM_NAME="${{ secrets.BREVO_FROM_NAME }}"
 
       # If required, use the Cloud Run URL output in later steps
       - name: 'Show output'
